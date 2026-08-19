@@ -1,0 +1,362 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  USER
+  MODERATOR
+  ADMIN
+}
+
+enum ModerationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ConnectorType {
+  TYPE_1_J1772     // Type 1 (USA / Japan AC)
+  TYPE_2_MENNEKES  // Type 2 (Europe AC)
+  CCS1             // Combo 1 (DC)
+  CCS2             // Combo 2 (DC)
+  GB_T_AC          // China AC
+  GB_T_DC          // China DC (BYD, etc.)
+  CHADEMO          // Japan DC (Nissan Leaf)
+  TESLA_NACS       // North American Charging Standard
+}
+
+enum StationStatus {
+  OPERATIONAL
+  LIMITED
+  OUT_OF_SERVICE
+  MAINTENANCE
+}
+
+enum StationAccess {
+  PUBLIC
+  HOTEL_GUEST_ONLY
+  SHOPPING_CUSTOMER
+  PAID_PARKING
+  RESTRICTED
+}
+
+enum ManualCategory {
+  USER_MANUAL
+  WORKSHOP_REPAIR
+  WIRING_HIGH_VOLTAGE
+  CHARGING_INFRASTRUCTURE
+  SAFETY_FIRST_RESPONDER
+  BATTERY_DIAGNOSTICS
+}
+
+enum MarketplaceCategory {
+  VEHICLE_COMPLETE       // Carros y motos eléctricas completas (usados / nuevos)
+  CHARGER_WALLBOX        // Cargadores de pared (Wallbox 7kW-22kW, portátiles 110V/220V)
+  ADAPTER_CONNECTOR      // Adaptadores (CCS2 a GB/T, Tipo 2 a Tipo 1, NACS, etc.)
+  BATTERY_CELLS_BMS      // Celdas LFP, módulos de batería, balanceadores activos BMS
+  HV_PARTS_INVERTER      // Inversores, motores eléctricos, cargadores OBC, cables HV
+  ACCESSORIES_TIRES      // Llantas de baja resistencia EV, tapetes, protectores, cables
+}
+
+enum ItemCondition {
+  NEW                    // Nuevo / En caja
+  LIKE_NEW               // Como nuevo / Poco uso
+  USED_GOOD              // Usado en buen estado
+  FOR_PARTS              // Para repuestos / Reparación
+}
+
+model User {
+  id            String         @id @default(cuid())
+  name          String?
+  email         String         @unique
+  emailVerified DateTime?
+  image         String?
+  phone         String?
+  role          Role           @default(USER)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Relations
+  vehicles            UserVehicle[]
+  routes              Route[]
+  routeComments       RouteComment[]
+  stationsAdded       ChargingStation[]
+  stationReviews      ChargingReview[]
+  workshopsAdded      Workshop[]
+  workshopReviews     WorkshopReview[]
+  manualsUploaded     Manual[]
+  marketplaceListings MarketplaceListing[]
+  moderationLogs      ModerationLog[]
+}
+
+model Vehicle {
+  id               String          @id @default(cuid())
+  brand            String          // e.g. BYD, Tesla, Renault, BMW, Volvo, Kia, Hyundai
+  model            String          // e.g. Dolphin, Model 3, Kwid E-Tech, EX30, EV6
+  year             Int             // e.g. 2024
+  batteryKwh       Float           // e.g. 44.9, 60.0
+  realRangeKm      Int             // e.g. 300
+  wltpRangeKm      Int?            // e.g. 340
+  connectorTypes   ConnectorType[]
+  maxAcKw          Float           // e.g. 6.6, 11.0
+  maxDcKw          Float           // e.g. 60.0, 150.0
+  imageUrl         String?
+  efficiencyKwh100 Float?          // e.g. 14.5 kWh/100km
+  description      String?
+  createdAt        DateTime        @default(now())
+
+  usersWithVehicle UserVehicle[]
+  routesCreated    Route[]
+}
+
+model UserVehicle {
+  id            String    @id @default(cuid())
+  userId        String
+  vehicleId     String
+  nickname      String?
+  licensePlate  String?   // Masked in UI for privacy
+  batteryHealth Float?    // SOH % e.g. 98.5
+  isPrimary     Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle       Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ChargingStation {
+  id             String           @id @default(cuid())
+  name           String
+  operator       String           // Celsia, Enel X Way, Terpel Voltex, EPM, Blink, Evsy, Petrobras, etc.
+  address        String
+  city           String           // e.g. Bogotá, Medellín, Cali, Barranquilla, Pereira
+  department     String           // e.g. Cundinamarca, Antioquia, Valle del Cauca, Risaralda
+  latitude       Float
+  longitude      Float
+  status         StationStatus    @default(OPERATIONAL)
+  access         StationAccess    @default(PUBLIC)
+  connectors     Json             // [{ type: "CCS2", powerKw: 60, count: 2, pricePerKwh: 1650 }]
+  photos         String[]         // Cloudinary URLs
+  amenities      String[]         // ["WiFi", "Restroom", "24/7", "Coffee", "Security"]
+  priceInfo      String?          // "$1.650 / kWh" o "Gratuito con consumo"
+  rating         Float            @default(5.0)
+  reviewsCount   Int              @default(0)
+  isVerified     Boolean          @default(false)
+  moderation     ModerationStatus @default(APPROVED)
+  submittedById  String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  submittedBy    User?            @relation(fields: [submittedById], references: [id], onDelete: SetNull)
+  reviews        ChargingReview[]
+
+  @@index([city, department])
+  @@index([latitude, longitude])
+}
+
+model ChargingReview {
+  id               String          @id @default(cuid())
+  stationId        String
+  userId           String
+  rating           Int             // 1-5
+  comment          String
+  connectorUsed    ConnectorType?
+  powerDeliveredKw Float?
+  costTotalCop     Int?
+  photoUrl         String?
+  createdAt        DateTime        @default(now())
+
+  station          ChargingStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([stationId])
+}
+
+model Route {
+  id                String           @id @default(cuid())
+  title             String           // e.g. "Bogotá a Medellín vía Villeta - Dorada"
+  description       String
+  originCity        String           // e.g. "Bogotá, D.C."
+  destinationCity   String           // e.g. "Medellín, Antioquia"
+  originCoords      Json             // { lat: 4.6097, lng: -74.0817 }
+  destinationCoords Json             // { lat: 6.2442, lng: -75.5812 }
+  distanceKm        Float            // e.g. 415.0
+  durationMinutes   Int              // e.g. 480
+  elevationGainM    Int?             // e.g. 3400 (Ascenso acumulado)
+  waypoints         Json?            // Coordinates line or geojson
+  chargingStops     Json             // Suggested or used charging stations in route
+  vehicleUsedId     String?
+  avgConsumption    Float?           // kWh / 100km
+  difficulty        String           @default("MODERATE") // "EASY", "MODERATE", "CHALLENGING"
+  roadStatus        String?          // "Excelente", "Obras en La Vega", "Doble Calzada"
+  photos            String[]
+  moderation        ModerationStatus @default(APPROVED)
+  createdById       String
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  createdBy         User             @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  vehicleUsed       Vehicle?         @relation(fields: [vehicleUsedId], references: [id], onDelete: SetNull)
+  comments          RouteComment[]
+
+  @@index([originCity, destinationCity])
+}
+
+model RouteComment {
+  id            String    @id @default(cuid())
+  routeId       String
+  userId        String
+  content       String
+  rating        Int?      // 1-5
+  actualKwhUsed Float?
+  travelDate    DateTime?
+  createdAt     DateTime  @default(now())
+
+  route         Route     @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([routeId])
+}
+
+model Workshop {
+  id              String           @id @default(cuid())
+  name            String           // e.g. "ElectroDrive Bogotá - Especialistas HV"
+  address         String
+  city            String
+  department      String
+  latitude        Float
+  longitude       Float
+  phone           String
+  whatsapp        String?
+  email           String?
+  website         String?
+  specialties     String[]         // ["Diagnóstico HV", "Reparación Baterías BMS", "Inversores", "Cargador Onboard OBC", "Aire Acondicionado Alta Tensión"]
+  certifications  String[]         // ["Certificado Retie", "ASE EV Certified", "BYD Tech Certified"]
+  supportedBrands String[]         // ["BYD", "Tesla", "Renault", "BMW", "Nissan", "Todas"]
+  photos          String[]
+  rating          Float            @default(5.0)
+  reviewsCount    Int              @default(0)
+  isVerified      Boolean          @default(false)
+  moderation      ModerationStatus @default(APPROVED)
+  submittedById   String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  submittedBy     User?            @relation(fields: [submittedById], references: [id], onDelete: SetNull)
+  reviews         WorkshopReview[]
+
+  @@index([city, department])
+}
+
+model WorkshopReview {
+  id            String   @id @default(cuid())
+  workshopId    String
+  userId        String
+  rating        Int      // 1-5
+  serviceDone   String   // e.g. "Diagnóstico de batería y balanceo de celdas"
+  comment       String
+  costScore     Int?     // 1 (Económico) - 3 (Costoso)
+  verifiedVisit Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  workshop      Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workshopId])
+}
+
+model Manual {
+  id            String           @id @default(cuid())
+  title         String           // e.g. "Manual de Rescate y Alto Voltaje BYD Yuan Plus"
+  description   String
+  category      ManualCategory
+  fileUrl       String           // Cloudinary or secure storage URL
+  fileSizeBytes Int
+  fileFormat    String           @default("PDF")
+  brand         String?          // e.g. "BYD"
+  model         String?          // e.g. "Yuan Plus"
+  year          Int?
+  downloadCount Int              @default(0)
+  moderation    ModerationStatus @default(APPROVED)
+  uploadedById  String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  uploadedBy    User?            @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([brand, category])
+}
+
+// ==============================================================================
+// MARKETPLACE EV - COMPRA Y VENTA DE VEHÍCULOS, CARGADORES, PARTES Y ACCESORIOS
+// ==============================================================================
+model MarketplaceListing {
+  id               String              @id @default(cuid())
+  title            String              // e.g. "BYD Yuan Plus GLX 2023 - Único dueño" o "Wallbox Pulsar Plus 7.4kW Type 2"
+  description      String
+  category         MarketplaceCategory
+  condition        ItemCondition       @default(USED_GOOD)
+  priceCop         Float               // Precio en Pesos Colombianos (COP)
+  isNegotiable     Boolean             @default(true)
+  city             String
+  department       String
+  photos           String[]            // URLs en Cloudinary
+  contactPhone     String              // Número de contacto directo / WhatsApp
+  contactEmail     String?
+
+  // Campos específicos para vehículos completos
+  vehicleBrand     String?             // e.g. "BYD", "Tesla", "Renault"
+  vehicleModel     String?             // e.g. "Yuan Plus", "Model 3"
+  vehicleYear      Int?                // e.g. 2023
+  mileageKm        Int?                // e.g. 18500
+  batteryHealthSoh Float?              // SOH % e.g. 99.1
+  batteryKwh       Float?              // e.g. 60.48
+  licensePlateMask String?             // e.g. "EVK-***"
+  connectorType    ConnectorType?      // Conector principal
+  soatValidUntil   DateTime?
+  techValidUntil   DateTime?
+
+  // Campos específicos para partes, cargadores y accesorios
+  chargingPowerKw  Float?              // e.g. 7.4, 11.0, 22.0 kW para cargadores
+  compatibleBrands String[]            // e.g. ["BYD", "Renault", "Tesla", "Universal"]
+
+  // Estado & Moderación
+  isSold           Boolean             @default(false)
+  featured         Boolean             @default(false)
+  viewsCount       Int                 @default(0)
+  moderation       ModerationStatus    @default(APPROVED)
+  rejectionReason  String?
+  userId           String
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  user             User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([category, city])
+  @@index([vehicleBrand, vehicleYear])
+  @@index([priceCop])
+}
+
+model ModerationLog {
+  id         String   @id @default(cuid())
+  adminId    String
+  entityType String   // "STATION", "ROUTE", "WORKSHOP", "MANUAL", "MARKETPLACE", "REVIEW"
+  entityId   String
+  action     String   // "APPROVE", "REJECT", "FLAG", "DELETE"
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  admin      User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([entityType, entityId])
+}
