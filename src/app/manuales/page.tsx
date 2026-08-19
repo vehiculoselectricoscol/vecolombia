@@ -7,7 +7,6 @@ import {
   FileText,
   Search,
   PlusCircle,
-  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -15,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ManualItem, ManualCategory } from "@/types";
 import { formatBytes } from "@/lib/utils";
 import { toast } from "sonner";
@@ -25,7 +24,7 @@ export default function ManualesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterCategory, setFilterCategory] = useState<ManualCategory | "ALL">("ALL");
   const [filterBrand, setFilterBrand] = useState("ALL");
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   // New Manual Modal States
   const [isNewManualOpen, setIsNewManualOpen] = useState(false);

@@ -9,7 +9,6 @@ import {
   ShieldCheck,
   Grid,
   Map as MapIcon,
-  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -30,7 +29,7 @@ export default function ElectrolinerasPage() {
   const [filterConnector, setFilterConnector] = useState<ConnectorType | "ALL">("ALL");
   const [filterMinPower, setFilterMinPower] = useState(0);
   const [viewMode, setViewMode] = useState<"GRID" | "MAP">("GRID");
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   // Selected Station for Details & Reviews Modal
   const [selectedStation, setSelectedStation] = useState<ChargingStationItem | null>(null);

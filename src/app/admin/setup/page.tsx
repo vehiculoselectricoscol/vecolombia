@@ -10,12 +10,9 @@ import {
   Mail,
   Phone,
   Lock,
-  ArrowRight,
-  Sparkles,
-  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 

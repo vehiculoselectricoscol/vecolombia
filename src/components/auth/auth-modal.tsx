@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ImageUploader } from "@/components/ui/image-uploader";
-import { LogIn, UserPlus, Zap, Lock, Mail, User, Phone, ShieldCheck, AlertCircle } from "lucide-react";
+import { LogIn, UserPlus, Zap, Lock, Mail, User, Phone, ShieldCheck } from "lucide-react";
 import { signIn } from "next-auth/react";
 import { toast } from "sonner";
 
@@ -47,7 +47,7 @@ export function AuthModal({
     setGoogleLoading(true);
     try {
       await signIn("google", { callbackUrl: window.location.href });
-    } catch (err: any) {
+    } catch {
       toast.error("Error al conectar con Google");
       setGoogleLoading(false);
     }

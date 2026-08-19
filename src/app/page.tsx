@@ -4,29 +4,15 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Zap,
-  MapPin,
   Compass,
-  Wrench,
-  BookOpen,
   Car,
-  ShieldCheck,
-  BatteryCharging,
   ArrowRight,
-  Search,
-  Sparkles,
-  TrendingUp,
-  Mountain,
-  Users,
-  CheckCircle2,
   Activity,
-  Sliders,
   PlusCircle,
-  Clock,
   Gauge,
-  HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ConnectorBadge } from "@/components/connector-badge";
 import { ColombiaMap } from "@/components/map/colombia-map";
@@ -40,7 +26,7 @@ export default function HomePage() {
   const [selectedRoute, setSelectedRoute] = useState<RouteItem | null>(null);
   const [filterBrand, setFilterBrand] = useState<string>("ALL");
   const [isTripModalOpen, setIsTripModalOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   const fetchCommunityData = async () => {
     try {

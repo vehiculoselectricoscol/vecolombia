@@ -19,7 +19,6 @@ export function Avatar({ src, alt, fallback = "VE", className, ...props }: Avata
       {...props}
     >
       {src && !hasError ? (
-        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={src}
           alt={alt || "Avatar"}

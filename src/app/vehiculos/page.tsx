@@ -3,14 +3,9 @@
 import React, { useState, useEffect } from "react";
 import {
   Car,
-  Zap,
-  BatteryCharging,
-  Gauge,
   Search,
-  Sliders,
   Clock,
   Sparkles,
-  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -28,7 +23,7 @@ export default function VehiculosPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterBrand, setFilterBrand] = useState("ALL");
   const [filterConnector, setFilterConnector] = useState<ConnectorType | "ALL">("ALL");
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   // Selected Vehicle for Live Charging Calculator
   const [calcVehicleId, setCalcVehicleId] = useState<string>("");
@@ -36,27 +31,26 @@ export default function VehiculosPage() {
   const [calcToSoc, setCalcToSoc] = useState(80);
   const [calcChargerKw, setCalcChargerKw] = useState(60);
 
-  const fetchVehicles = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/vehicles");
-      const data = await res.json();
-      if (data.success && data.data) {
-        setVehicles(data.data);
-        if (data.data.length > 0 && !calcVehicleId) {
-          setCalcVehicleId(data.data[0].id);
-        }
-      }
-    } catch {
-      toast.error("Error conectando con el catálogo de vehículos");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    async function fetchVehicles() {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/vehicles");
+        const data = await res.json();
+        if (data.success && data.data) {
+          setVehicles(data.data);
+          if (data.data.length > 0 && !calcVehicleId) {
+            setCalcVehicleId(data.data[0].id);
+          }
+        }
+      } catch {
+        toast.error("Error al cargar catálogo de vehículos");
+      } finally {
+        setLoading(false);
+      }
+    }
     fetchVehicles();
-  }, []);
+  }, [calcVehicleId]);
 
   const calcVehicle = vehicles.find((v) => v.id === calcVehicleId) || vehicles[0];
 

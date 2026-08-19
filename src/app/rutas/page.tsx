@@ -3,18 +3,12 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Compass,
-  MapPin,
   PlusCircle,
   Sparkles,
-  Zap,
-  Activity,
-  BatteryCharging,
-  Clock,
-  Car,
   TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Select } from "@/components/ui/select";

@@ -9,7 +9,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  ReferenceLine,
 } from "recharts";
 import { ElevationPoint } from "@/types";
 import { Mountain, BatteryCharging, Zap } from "lucide-react";

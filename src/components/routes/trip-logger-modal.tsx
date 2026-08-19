@@ -24,7 +24,6 @@ import {
   PlusCircle,
   Trash2,
   LogIn,
-  Plus,
 } from "lucide-react";
 import { VehicleItem, ChargingTelemetryStop, UserVehicleItem } from "@/types";
 import { useAuth } from "@/context/auth-context";

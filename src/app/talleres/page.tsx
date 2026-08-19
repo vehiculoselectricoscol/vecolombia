@@ -9,7 +9,6 @@ import {
   Search,
   PlusCircle,
   Award,
-  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -26,7 +25,7 @@ export default function TalleresPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterBrand, setFilterBrand] = useState("ALL");
   const [filterSpecialty, setFilterSpecialty] = useState("ALL");
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   // Selected Workshop for Detail & Review Modal
   const [selectedWorkshop, setSelectedWorkshop] = useState<WorkshopItem | null>(null);
@@ -352,6 +351,16 @@ export default function TalleresPage() {
                     className="mt-1.5"
                   />
                 </div>
+
+                <Select
+                  label="Relación Calidad / Precio"
+                  value={reviewCost.toString()}
+                  onChange={(e) => setReviewCost(Number(e.target.value))}
+                >
+                  <option value="1">💲 Económico / Justo</option>
+                  <option value="2">💲💲 Precio Estándar</option>
+                  <option value="3">💲💲💲 Costoso</option>
+                </Select>
               </div>
 
               <div>
@@ -416,6 +425,11 @@ export default function TalleresPage() {
           <div>
             <label className="text-xs font-semibold uppercase text-muted-foreground">Especialidades (separadas por coma)</label>
             <Input value={newSpecialties} onChange={(e) => setNewSpecialties(e.target.value)} className="mt-1" />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold uppercase text-muted-foreground">Marcas Atendidas (separadas por coma)</label>
+            <Input value={newBrands} onChange={(e) => setNewBrands(e.target.value)} placeholder="Ej. BYD, Renault, Tesla, MG" className="mt-1" />
           </div>
         </div>
 

@@ -13,7 +13,6 @@ import {
   MessageCircle,
   MapPin,
   BatteryCharging,
-  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -34,7 +33,7 @@ export default function MarketplacePage() {
   const [filterCategory, setFilterCategory] = useState<MarketplaceCategory | "ALL">("ALL");
   const [filterCondition, setFilterCondition] = useState<ItemCondition | "ALL">("ALL");
   const [filterCity, setFilterCity] = useState("ALL");
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   // Selected Listing for Detail Modal
   const [selectedListing, setSelectedListing] = useState<MarketplaceListingItem | null>(null);
@@ -450,6 +449,14 @@ export default function MarketplacePage() {
                   <label className="text-[10px] text-slate-400">Kilometraje</label>
                   <Input value={newMileage} onChange={(e) => setNewMileage(e.target.value)} className="h-8 text-xs" />
                 </div>
+                <div>
+                  <label className="text-[10px] text-slate-400">Año</label>
+                  <Input type="number" value={newYear} onChange={(e) => setNewYear(Number(e.target.value))} className="h-8 text-xs" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400">Placa (ej. EVK-***)</label>
+                  <Input value={newPlate} onChange={(e) => setNewPlate(e.target.value)} className="h-8 text-xs" />
+                </div>
               </div>
 
               <Slider
@@ -461,6 +468,13 @@ export default function MarketplacePage() {
                 onChange={setNewSoh}
                 valueDisplay={`${newSoh}%`}
               />
+            </div>
+          )}
+
+          {(newCategory === "CHARGER_WALLBOX" || newCategory === "ADAPTER_CONNECTOR") && (
+            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
+              <label className="text-xs font-semibold text-muted-foreground block mb-1">Potencia de Carga (kW)</label>
+              <Input value={newPowerKw} onChange={(e) => setNewPowerKw(e.target.value)} placeholder="Ej. 7.4 o 22" className="h-8 text-xs" />
             </div>
           )}
 
