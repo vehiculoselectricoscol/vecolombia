@@ -23,7 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { ImageUploader } from "@/components/ui/image-uploader";
-import { MarketplaceListingItem, MarketplaceCategory, ItemCondition } from "@/types";
+import { MarketplaceListingItem, MarketplaceCategory, ItemCondition, ConnectorType } from "@/types";
 import { formatCOP } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -57,6 +57,7 @@ export default function MarketplacePage() {
   const [newMileage, setNewMileage] = useState("18000");
   const [newSoh, setNewSoh] = useState(99.0);
   const [newPlate, setNewPlate] = useState("EVK-***");
+  const [newConnector, setNewConnector] = useState<ConnectorType>("CCS1");
   const [newPowerKw, setNewPowerKw] = useState("7.4");
 
   const fetchListings = async () => {
@@ -123,7 +124,7 @@ export default function MarketplacePage() {
         payload.mileageKm = Number(newMileage);
         payload.batteryHealthSoh = Number(newSoh);
         payload.licensePlateMask = newPlate;
-        payload.connectorType = "CCS2";
+        payload.connectorType = newConnector;
       } else if (newCategory === "CHARGER_WALLBOX" || newCategory === "ADAPTER_CONNECTOR") {
         payload.chargingPowerKw = parseFloat(newPowerKw);
       }
@@ -455,7 +456,22 @@ export default function MarketplacePage() {
                 </div>
                 <div>
                   <label className="text-[10px] text-slate-400">Placa (ej. EVK-***)</label>
-                  <Input value={newPlate} onChange={(e) => setNewPlate(e.target.value)} className="h-8 text-xs" />
+                  <Input value={newPlate} onChange={(e) => setNewPlate(e.target.value)} className="h-8 text-xs font-mono-spec" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400">Puerto de Carga</label>
+                  <Select
+                    value={newConnector}
+                    onChange={(e) => setNewConnector(e.target.value as any)}
+                    className="h-8 text-xs"
+                  >
+                    <option value="CCS1">CCS1 (Combo 1 DC)</option>
+                    <option value="CCS2">CCS2 (Combo 2 DC)</option>
+                    <option value="GB_T_DC">GB/T (DC China)</option>
+                    <option value="TYPE_2_MENNEKES">Tipo 2 (AC)</option>
+                    <option value="TYPE_1_J1772">Tipo 1 (AC)</option>
+                    <option value="TESLA_NACS">Tesla NACS</option>
+                  </Select>
                 </div>
               </div>
 

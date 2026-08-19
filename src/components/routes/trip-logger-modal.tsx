@@ -25,7 +25,7 @@ import {
   Trash2,
   LogIn,
 } from "lucide-react";
-import { VehicleItem, ChargingTelemetryStop, UserVehicleItem } from "@/types";
+import { VehicleItem, ChargingTelemetryStop, UserVehicleItem, ConnectorType } from "@/types";
 import { useAuth } from "@/context/auth-context";
 import { toast } from "sonner";
 
@@ -89,6 +89,7 @@ export function TripLoggerModal({
   const [didCharge, setDidCharge] = useState(false);
   const [chargingStops, setChargingStops] = useState<ChargingTelemetryStop[]>([]);
   const [newStopStation, setNewStopStation] = useState("Terpel Voltex Briceño");
+  const [newStopConnector, setNewStopConnector] = useState<ConnectorType>("CCS1");
   const [newStopStartSoc, setNewStopStartSoc] = useState(35);
   const [newStopEndSoc, setNewStopEndSoc] = useState(80);
   const [newStopKwh, setNewStopKwh] = useState("22.5");
@@ -169,7 +170,7 @@ export function TripLoggerModal({
       powerKw: parseFloat(newStopKw) || 50,
       costCop: parseInt(newStopCost) || 0,
       durationMinutes: parseInt(newStopDuration) || 25,
-      connectorType: "CCS2",
+      connectorType: newStopConnector,
     };
     setChargingStops([...chargingStops, stop]);
     toast.success(`Parada en ${newStopStation} registrada`);
@@ -678,17 +679,35 @@ export function TripLoggerModal({
                   </Badge>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold uppercase text-muted-foreground block">
-                      Nombre de la Electrolinera
-                    </label>
-                    <Input
-                      placeholder="Ej. Terpel Voltex Briceño"
-                      value={newStopStation}
-                      onChange={(e) => setNewStopStation(e.target.value)}
-                      className="mt-1 text-xs"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-semibold uppercase text-muted-foreground block">
+                        Nombre de la Electrolinera
+                      </label>
+                      <Input
+                        placeholder="Ej. Terpel Voltex Briceño"
+                        value={newStopStation}
+                        onChange={(e) => setNewStopStation(e.target.value)}
+                        className="mt-1 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold uppercase text-muted-foreground block">
+                        Conector Usado
+                      </label>
+                      <Select
+                        value={newStopConnector}
+                        onChange={(e) => setNewStopConnector(e.target.value as any)}
+                        className="mt-1 text-xs"
+                      >
+                        <option value="CCS1">CCS1 (Combo 1 DC)</option>
+                        <option value="CCS2">CCS2 (Combo 2 DC)</option>
+                        <option value="GB_T_DC">GB/T DC (China)</option>
+                        <option value="TYPE_2_MENNEKES">Tipo 2 (AC)</option>
+                        <option value="TYPE_1_J1772">Tipo 1 (AC)</option>
+                        <option value="TESLA_NACS">Tesla NACS</option>
+                      </Select>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
@@ -711,7 +730,6 @@ export function TripLoggerModal({
                       />
                     </div>
                   </div>
-                </div>
 
                 <div className="grid grid-cols-4 gap-2">
                   <div>

@@ -961,8 +961,9 @@ export default function AdminDashboardPage() {
             </label>
             <div className="flex flex-wrap gap-2">
               {[
-                { type: "CCS2", label: "CCS2 (DC)" },
-                { type: "GB_T_DC", label: "GB/T (DC)" },
+                { type: "CCS1", label: "CCS1 Combo 1 (DC Americano)" },
+                { type: "CCS2", label: "CCS2 Combo 2 (DC Europeo)" },
+                { type: "GB_T_DC", label: "GB/T (DC Chino)" },
                 { type: "TYPE_2_MENNEKES", label: "Tipo 2 Mennekes (AC)" },
                 { type: "TYPE_1_J1772", label: "Tipo 1 J1772 (AC)" },
                 { type: "TESLA_NACS", label: "Tesla NACS" },

@@ -247,10 +247,12 @@ export default function ElectrolinerasPage() {
             onChange={(e) => setFilterConnector(e.target.value as any)}
           >
             <option value="ALL">Todos los Conectores</option>
+            <option value="CCS1">Combo 1 (CCS1 DC Americano)</option>
             <option value="CCS2">Combo 2 (CCS2 DC)</option>
             <option value="GB_T_DC">GB/T DC (China / BYD)</option>
             <option value="TYPE_2_MENNEKES">Tipo 2 Mennekes (AC)</option>
             <option value="TYPE_1_J1772">Tipo 1 J1772 (AC)</option>
+            <option value="TESLA_NACS">Tesla NACS</option>
             <option value="CHADEMO">CHAdeMO (DC)</option>
           </Select>
 
@@ -483,10 +485,13 @@ export default function ElectrolinerasPage() {
               value={newConnectorType}
               onChange={(e) => setNewConnectorType(e.target.value as any)}
             >
-              <option value="CCS2">CCS2 (DC)</option>
+              <option value="CCS1">CCS1 Combo 1 (DC Americano)</option>
+              <option value="CCS2">CCS2 Combo 2 (DC)</option>
               <option value="GB_T_DC">GB/T (DC)</option>
               <option value="TYPE_2_MENNEKES">Tipo 2 (AC)</option>
               <option value="TYPE_1_J1772">Tipo 1 (AC)</option>
+              <option value="TESLA_NACS">Tesla NACS</option>
+              <option value="CHADEMO">CHAdeMO (DC)</option>
             </Select>
 
             <div>
