@@ -1,6 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { signOut as nextAuthSignOut } from "next-auth/react";
 import { toast } from "sonner";
 import { AuthModal } from "@/components/auth/auth-modal";
 
@@ -32,11 +33,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalTab, setAuthModalTab] = useState<"login" | "register">("login");
 
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
     try {
-      const res = await fetch("/api/auth/session");
+      const res = await fetch("/api/auth/session", {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      });
       const data = await res.json();
-      if (data.success && data.user) {
+      if (data.success && data.authenticated && data.user) {
         setUser(data.user);
       } else {
         setUser(null);
@@ -46,11 +50,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     refreshUser();
-  }, []);
+  }, [refreshUser]);
 
   const login = (userData: AuthUser) => {
     setUser(userData);
@@ -58,10 +62,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      // 1. Terminate NextAuth session
+      try {
+        await nextAuthSignOut({ redirect: false });
+      } catch (e) {
+        console.error("NextAuth signOut error", e);
+      }
+
+      // 2. Clear all server-side session cookies
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      // 3. Clear local state immediately
       setUser(null);
       toast.success("Has cerrado sesión exitosamente");
-    } catch {
+
+      // 4. Force session verification
+      await refreshUser();
+    } catch (err) {
+      console.error("Logout error", err);
       toast.error("Error al cerrar sesión");
     }
   };
