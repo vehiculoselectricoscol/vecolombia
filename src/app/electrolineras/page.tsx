@@ -1,20 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Zap,
   MapPin,
   Search,
-  Filter,
   PlusCircle,
   ShieldCheck,
-  Star,
-  CheckCircle2,
-  Clock,
-  Car,
-  Camera,
-  Map as MapIcon,
   Grid,
+  Map as MapIcon,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -25,18 +20,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { ConnectorBadge } from "@/components/connector-badge";
 import { ColombiaMap } from "@/components/map/colombia-map";
-import { INITIAL_STATIONS } from "@/lib/data/seed-data";
-import { ChargingStationItem, ConnectorType, ChargingReviewItem } from "@/types";
+import { ChargingStationItem, ConnectorType } from "@/types";
 import { toast } from "sonner";
-import { stationSubmissionSchema, chargingReviewSchema } from "@/lib/validations";
 
 export default function ElectrolinerasPage() {
-  const [stations, setStations] = useState<ChargingStationItem[]>(INITIAL_STATIONS);
+  const [stations, setStations] = useState<ChargingStationItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterOperator, setFilterOperator] = useState("ALL");
   const [filterConnector, setFilterConnector] = useState<ConnectorType | "ALL">("ALL");
   const [filterMinPower, setFilterMinPower] = useState(0);
   const [viewMode, setViewMode] = useState<"GRID" | "MAP">("GRID");
+  const [loading, setLoading] = useState(true);
 
   // Selected Station for Details & Reviews Modal
   const [selectedStation, setSelectedStation] = useState<ChargingStationItem | null>(null);
@@ -54,11 +48,28 @@ export default function ElectrolinerasPage() {
   const [newAddress, setNewAddress] = useState("");
   const [newCity, setNewCity] = useState("Bogotá, D.C.");
   const [newDepartment, setNewDepartment] = useState("Cundinamarca");
-  const [newLat, setNewLat] = useState("4.685");
-  const [newLng, setNewLng] = useState("-74.053");
   const [newConnectorType, setNewConnectorType] = useState<ConnectorType>("CCS2");
   const [newPowerKw, setNewPowerKw] = useState("60");
   const [newPrice, setNewPrice] = useState("$1.700 / kWh");
+
+  const fetchStations = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/stations");
+      const data = await res.json();
+      if (data.success) {
+        setStations(data.data);
+      }
+    } catch {
+      toast.error("Error conectando con la base de datos");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStations();
+  }, []);
 
   // Filter logic
   const filteredStations = stations.filter((st) => {
@@ -72,132 +83,82 @@ export default function ElectrolinerasPage() {
 
     const matchConnector =
       filterConnector === "ALL" ||
-      st.connectors.some((c) => c.type === filterConnector);
+      (Array.isArray(st.connectors) && st.connectors.some((c) => c.type === filterConnector));
 
     const matchPower =
       filterMinPower === 0 ||
-      st.connectors.some((c) => c.powerKw >= filterMinPower);
+      (Array.isArray(st.connectors) && st.connectors.some((c) => c.powerKw >= filterMinPower));
 
     return matchSearch && matchOperator && matchConnector && matchPower;
   });
 
-  // Operators list for filter
   const operators = Array.from(new Set(stations.map((s) => s.operator)));
 
-  const handleAddReview = () => {
+  const handleAddReview = async () => {
     if (!selectedStation) return;
     try {
-      const payload = {
-        stationId: selectedStation.id,
-        rating: Number(reviewRating),
-        comment: reviewComment,
-        powerDeliveredKw: reviewPower ? Number(reviewPower) : undefined,
-        costTotalCop: reviewCost ? Number(reviewCost) : undefined,
-        connectorUsed: "CCS2" as ConnectorType,
-      };
-
-      chargingReviewSchema.parse(payload);
-
-      const newReview: ChargingReviewItem = {
-        id: `rev-${Date.now()}`,
-        stationId: selectedStation.id,
-        userId: "u-current",
-        userName: "Alejandro Ríos",
-        userAvatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80",
-        rating: payload.rating,
-        comment: payload.comment,
-        connectorUsed: payload.connectorUsed,
-        powerDeliveredKw: payload.powerDeliveredKw,
-        costTotalCop: payload.costTotalCop,
-        createdAt: new Date().toISOString(),
-      };
-
-      const updatedStations = stations.map((s) => {
-        if (s.id === selectedStation.id) {
-          const currentReviews = s.reviews || [];
-          const newCount = s.reviewsCount + 1;
-          const newRating = (s.rating * s.reviewsCount + payload.rating) / newCount;
-          return {
-            ...s,
-            reviewsCount: newCount,
-            rating: Number(newRating.toFixed(1)),
-            reviews: [newReview, ...currentReviews],
-          };
-        }
-        return s;
+      const res = await fetch("/api/stations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stationId: selectedStation.id,
+          rating: Number(reviewRating),
+          comment: reviewComment,
+          powerDeliveredKw: reviewPower ? Number(reviewPower) : undefined,
+          costTotalCop: reviewCost ? Number(reviewCost) : undefined,
+          connectorUsed: "CCS2",
+        }),
       });
 
-      setStations(updatedStations);
-      setSelectedStation(updatedStations.find((s) => s.id === selectedStation.id) || null);
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error);
+
+      toast.success("¡Check-in registrado exitosamente!");
       setReviewComment("");
-      toast.success("¡Reseña y check-in guardados con éxito!");
+      fetchStations();
+      setSelectedStation(null);
     } catch (err: any) {
-      if (err.errors && err.errors[0]) {
-        toast.error(err.errors[0].message);
-      } else {
-        toast.error("Por favor completa los campos correctamente.");
-      }
+      toast.error(err.message || "Error guardando check-in");
     }
   };
 
-  const handleCreateStation = () => {
+  const handleCreateStation = async () => {
     try {
-      const payload = {
-        name: newName,
-        operator: newOperator,
-        address: newAddress,
-        city: newCity,
-        department: newDepartment,
-        latitude: parseFloat(newLat),
-        longitude: parseFloat(newLng),
-        connectors: [
-          {
-            type: newConnectorType,
-            powerKw: parseFloat(newPowerKw),
-            count: 2,
-            isAvailable: true,
-          },
-        ],
-        photos: ["https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=800&q=80"],
-        amenities: ["24/7", "WiFi", "Baños"],
-        priceInfo: newPrice,
-      };
+      const res = await fetch("/api/stations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newName,
+          operator: newOperator,
+          address: newAddress,
+          city: newCity,
+          department: newDepartment,
+          latitude: 4.6853,
+          longitude: -74.0538,
+          connectors: [
+            {
+              type: newConnectorType,
+              powerKw: parseFloat(newPowerKw),
+              count: 2,
+              isAvailable: true,
+            },
+          ],
+          photos: ["https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=800&q=80"],
+          amenities: ["24/7", "WiFi", "Baños"],
+          priceInfo: newPrice,
+        }),
+      });
 
-      const validated = stationSubmissionSchema.parse(payload);
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error);
 
-      const newStationItem: ChargingStationItem = {
-        id: `est-${Date.now()}`,
-        name: validated.name,
-        operator: validated.operator,
-        address: validated.address,
-        city: validated.city,
-        department: validated.department,
-        latitude: validated.latitude,
-        longitude: validated.longitude,
-        status: "OPERATIONAL",
-        access: "PUBLIC",
-        connectors: validated.connectors as any,
-        photos: validated.photos,
-        amenities: validated.amenities,
-        priceInfo: validated.priceInfo,
-        rating: 5.0,
-        reviewsCount: 1,
-        isVerified: true,
-        moderation: "APPROVED",
-        createdAt: new Date().toISOString(),
-      };
-
-      setStations([newStationItem, ...stations]);
+      toast.success("¡Electrolinera registrada con éxito!");
       setIsNewStationOpen(false);
       setNewName("");
       setNewAddress("");
-      toast.success("¡Electrolinera registrada y publicada exitosamente!");
+      fetchStations();
     } catch (err: any) {
-      if (err.errors && err.errors[0]) {
-        toast.error(err.errors[0].message);
-      } else {
-        toast.error("Por favor valida los campos requeridos.");
-      }
+      toast.error(err.message || "Error al registrar estación");
     }
   };
 
@@ -208,7 +169,7 @@ export default function ElectrolinerasPage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-bold text-emerald-500 uppercase tracking-wider font-heading">
             <Zap className="w-4 h-4" />
-            Red Nacional de Carga
+            Red Nacional de Carga Eléctrica
           </div>
           <h1 className="text-3xl font-black font-heading text-foreground mt-1">
             Mapa & Directorio de Electrolineras en Colombia
@@ -260,7 +221,6 @@ export default function ElectrolinerasPage() {
       {/* Filter Bar */}
       <div className="p-4 rounded-2xl bg-card border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {/* Search Input */}
           <div className="relative">
             <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <Input
@@ -271,12 +231,11 @@ export default function ElectrolinerasPage() {
             />
           </div>
 
-          {/* Operator Filter */}
           <Select
             value={filterOperator}
             onChange={(e) => setFilterOperator(e.target.value)}
           >
-            <option value="ALL">Todos los Operadores (Celsia, Terpel, Enel X...)</option>
+            <option value="ALL">Todos los Operadores</option>
             {operators.map((op) => (
               <option key={op} value={op}>
                 {op}
@@ -284,7 +243,6 @@ export default function ElectrolinerasPage() {
             ))}
           </Select>
 
-          {/* Connector Filter */}
           <Select
             value={filterConnector}
             onChange={(e) => setFilterConnector(e.target.value as any)}
@@ -297,7 +255,6 @@ export default function ElectrolinerasPage() {
             <option value="CHADEMO">CHAdeMO (DC)</option>
           </Select>
 
-          {/* Power Filter */}
           <Select
             value={filterMinPower}
             onChange={(e) => setFilterMinPower(Number(e.target.value))}
@@ -305,26 +262,7 @@ export default function ElectrolinerasPage() {
             <option value="0">Cualquier Potencia (AC/DC)</option>
             <option value="50">Solo Carga Rápida DC (≥ 50 kW)</option>
             <option value="100">Carga Ultra-Rápida (≥ 100 kW)</option>
-            <option value="150">Hubs de Alta Potencia (≥ 150 kW)</option>
           </Select>
-        </div>
-
-        <div className="flex items-center justify-between text-xs text-muted-foreground pt-1 border-t border-slate-100 dark:border-slate-800">
-          <span>Mostrando <strong>{filteredStations.length}</strong> de {stations.length} electrolineras registradas</span>
-          {(searchQuery || filterOperator !== "ALL" || filterConnector !== "ALL" || filterMinPower > 0) && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery("");
-                setFilterOperator("ALL");
-                setFilterConnector("ALL");
-                setFilterMinPower(0);
-              }}
-              className="text-emerald-500 font-semibold hover:underline"
-            >
-              Limpiar Filtros
-            </button>
-          )}
         </div>
       </div>
 
@@ -348,7 +286,6 @@ export default function ElectrolinerasPage() {
               className="overflow-hidden hover:border-emerald-500/50 transition-all flex flex-col group"
             >
               <div className="relative h-48 w-full bg-slate-900 overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={st.photos[0] || "https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=800&q=80"}
                   alt={st.name}
@@ -360,7 +297,7 @@ export default function ElectrolinerasPage() {
                   </Badge>
                 </div>
                 <div className="absolute bottom-3 right-3 bg-slate-900/90 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-mono-spec font-bold text-emerald-400 border border-slate-700">
-                  ⭐ {st.rating.toFixed(1)} ({st.reviewsCount})
+                  ⭐ {st.rating?.toFixed(1) || "5.0"} ({st.reviewsCount || 0})
                 </div>
               </div>
 
@@ -378,20 +315,10 @@ export default function ElectrolinerasPage() {
               <CardContent className="p-5 pt-0 space-y-3 flex-1 flex flex-col justify-between">
                 <div className="space-y-2">
                   <div className="flex flex-wrap gap-1.5">
-                    {st.connectors.map((c, i) => (
-                      <ConnectorBadge key={i} type={c.type} powerKw={c.powerKw} />
-                    ))}
-                  </div>
-
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {st.amenities.map((am, i) => (
-                      <span
-                        key={i}
-                        className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] text-muted-foreground"
-                      >
-                        {am}
-                      </span>
-                    ))}
+                    {Array.isArray(st.connectors) &&
+                      st.connectors.map((c, i) => (
+                        <ConnectorBadge key={i} type={c.type} powerKw={c.powerKw} />
+                      ))}
                   </div>
                 </div>
 
@@ -437,36 +364,10 @@ export default function ElectrolinerasPage() {
           </DialogHeader>
 
           <div className="space-y-6 max-h-[65vh] overflow-y-auto pr-1">
-            {/* Connectors grid */}
-            <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
-                Tipos de Conector & Potencia Disponible
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {selectedStation.connectors.map((c, i) => (
-                  <div
-                    key={i}
-                    className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Zap className="w-4 h-4 text-emerald-500" />
-                      <div>
-                        <p className="text-xs font-bold text-foreground">{c.type}</p>
-                        <p className="text-[11px] text-muted-foreground">{c.count} puntos de recarga</p>
-                      </div>
-                    </div>
-                    <span className="font-mono-spec font-bold text-sm text-emerald-500">
-                      {c.powerKw} kW
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Check-in & New Review Form */}
+            {/* Check-in Form */}
             <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-heading">
-                Hacer Check-in & Dejar Opinión de Carga
+                Registrar Check-in
               </h4>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -478,7 +379,7 @@ export default function ElectrolinerasPage() {
                   <option value="5">⭐⭐⭐⭐⭐ (5 - Excelente)</option>
                   <option value="4">⭐⭐⭐⭐ (4 - Buena)</option>
                   <option value="3">⭐⭐⭐ (3 - Regular)</option>
-                  <option value="2">⭐⭐ (2 - Lenta/Fallos)</option>
+                  <option value="2">⭐⭐ (2 - Lenta)</option>
                   <option value="1">⭐ (1 - Fuera de servicio)</option>
                 </Select>
 
@@ -490,7 +391,6 @@ export default function ElectrolinerasPage() {
                     type="number"
                     value={reviewPower}
                     onChange={(e) => setReviewPower(e.target.value)}
-                    placeholder="Ej. 58"
                     className="mt-1.5"
                   />
                 </div>
@@ -503,7 +403,6 @@ export default function ElectrolinerasPage() {
                     type="number"
                     value={reviewCost}
                     onChange={(e) => setReviewCost(e.target.value)}
-                    placeholder="Ej. 45000"
                     className="mt-1.5"
                   />
                 </div>
@@ -511,53 +410,20 @@ export default function ElectrolinerasPage() {
 
               <div>
                 <label className="text-xs font-semibold uppercase text-muted-foreground">
-                  Comentario / Estado del Cargador
+                  Comentario
                 </label>
                 <Textarea
                   value={reviewComment}
                   onChange={(e) => setReviewComment(e.target.value)}
-                  placeholder="¿Inició la carga de inmediato? ¿Hubo fila? ¿Cómo pagaste?"
+                  placeholder="¿Cómo fue la carga en esta estación?"
                   rows={2}
                   className="mt-1.5"
                 />
               </div>
 
               <Button size="sm" variant="electric" onClick={handleAddReview} className="w-full font-semibold">
-                Guardar Check-in & Calificación
+                Guardar Check-in
               </Button>
-            </div>
-
-            {/* Existing Reviews */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                Opiniones de la Comunidad ({selectedStation.reviews?.length || 0})
-              </h4>
-
-              {selectedStation.reviews && selectedStation.reviews.length > 0 ? (
-                selectedStation.reviews.map((rev) => (
-                  <div
-                    key={rev.id}
-                    className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-card space-y-1.5 text-xs"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-foreground">{rev.userName}</span>
-                      <span className="text-amber-500 font-mono-spec font-bold">
-                        {"⭐".repeat(rev.rating)}
-                      </span>
-                    </div>
-                    <p className="text-muted-foreground leading-relaxed">{rev.comment}</p>
-                    {rev.powerDeliveredKw && (
-                      <p className="text-[11px] font-mono-spec text-emerald-500">
-                        Potencia entregada: {rev.powerDeliveredKw} kW
-                      </p>
-                    )}
-                  </div>
-                ))
-              ) : (
-                <p className="text-xs text-muted-foreground italic">
-                  Aún no hay reseñas registradas. ¡Sé el primero en hacer check-in!
-                </p>
-              )}
             </div>
           </div>
         </Dialog>
@@ -566,10 +432,7 @@ export default function ElectrolinerasPage() {
       {/* New Station Modal */}
       <Dialog open={isNewStationOpen} onOpenChange={setIsNewStationOpen}>
         <DialogHeader onClose={() => setIsNewStationOpen(false)}>
-          <DialogTitle>Reportar Nueva Electrolinera en Colombia</DialogTitle>
-          <DialogDescription>
-            Ayuda a mapear la red de carga nacional ingresando los datos de la estación encontrada.
-          </DialogDescription>
+          <DialogTitle>Reportar Nueva Electrolinera</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -597,44 +460,21 @@ export default function ElectrolinerasPage() {
               <option value="EPM">EPM</option>
               <option value="Blink Charging">Blink Charging</option>
               <option value="Evsy">Evsy</option>
-              <option value="Petrobras">Petrobras</option>
-              <option value="Otro">Otro Operador</option>
             </Select>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="text-xs font-semibold uppercase text-muted-foreground">
-                Dirección
-              </label>
-              <Input
-                placeholder="Ej. Calle 100 # 15-20"
-                value={newAddress}
-                onChange={(e) => setNewAddress(e.target.value)}
-                className="mt-1"
-              />
+              <label className="text-xs font-semibold uppercase text-muted-foreground">Dirección</label>
+              <Input value={newAddress} onChange={(e) => setNewAddress(e.target.value)} className="mt-1" />
             </div>
             <div>
-              <label className="text-xs font-semibold uppercase text-muted-foreground">
-                Ciudad
-              </label>
-              <Input
-                placeholder="Ej. Bogotá"
-                value={newCity}
-                onChange={(e) => setNewCity(e.target.value)}
-                className="mt-1"
-              />
+              <label className="text-xs font-semibold uppercase text-muted-foreground">Ciudad</label>
+              <Input value={newCity} onChange={(e) => setNewCity(e.target.value)} className="mt-1" />
             </div>
             <div>
-              <label className="text-xs font-semibold uppercase text-muted-foreground">
-                Departamento
-              </label>
-              <Input
-                placeholder="Ej. Cundinamarca"
-                value={newDepartment}
-                onChange={(e) => setNewDepartment(e.target.value)}
-                className="mt-1"
-              />
+              <label className="text-xs font-semibold uppercase text-muted-foreground">Departamento</label>
+              <Input value={newDepartment} onChange={(e) => setNewDepartment(e.target.value)} className="mt-1" />
             </div>
           </div>
 
@@ -648,43 +488,23 @@ export default function ElectrolinerasPage() {
               <option value="GB_T_DC">GB/T (DC)</option>
               <option value="TYPE_2_MENNEKES">Tipo 2 (AC)</option>
               <option value="TYPE_1_J1772">Tipo 1 (AC)</option>
-              <option value="CHADEMO">CHAdeMO (DC)</option>
             </Select>
 
             <div>
-              <label className="text-xs font-semibold uppercase text-muted-foreground">
-                Potencia Máxima (kW)
-              </label>
-              <Input
-                type="number"
-                value={newPowerKw}
-                onChange={(e) => setNewPowerKw(e.target.value)}
-                placeholder="Ej. 60"
-                className="mt-1"
-              />
+              <label className="text-xs font-semibold uppercase text-muted-foreground">Potencia (kW)</label>
+              <Input type="number" value={newPowerKw} onChange={(e) => setNewPowerKw(e.target.value)} className="mt-1" />
             </div>
 
             <div>
-              <label className="text-xs font-semibold uppercase text-muted-foreground">
-                Tarifa Aprox.
-              </label>
-              <Input
-                value={newPrice}
-                onChange={(e) => setNewPrice(e.target.value)}
-                placeholder="Ej. $1.700 / kWh"
-                className="mt-1"
-              />
+              <label className="text-xs font-semibold uppercase text-muted-foreground">Tarifa</label>
+              <Input value={newPrice} onChange={(e) => setNewPrice(e.target.value)} className="mt-1" />
             </div>
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setIsNewStationOpen(false)}>
-            Cancelar
-          </Button>
-          <Button variant="electric" onClick={handleCreateStation}>
-            Guardar Estación
-          </Button>
+          <Button variant="outline" onClick={() => setIsNewStationOpen(false)}>Cancelar</Button>
+          <Button variant="electric" onClick={handleCreateStation}>Guardar Estación</Button>
         </DialogFooter>
       </Dialog>
     </div>

@@ -89,18 +89,18 @@ export default function Footer() {
           </ul>
         </div>
 
-        {/* Col 4: Costos de Routing & Tech Stack */}
+        {/* Col 4: Información de la Red */}
         <div className="space-y-2.5">
           <h4 className="text-xs font-bold uppercase tracking-wider text-slate-200 font-heading">
-            Arquitectura & Datos
+            Red Eléctrica Nacional
           </h4>
           <p className="text-xs text-slate-400 leading-relaxed">
-            Motor de cálculo de rutas optimizado con <strong className="text-slate-200">OpenRouteService & OSRM</strong> con cero costo por petición y soporte de elevación andina.
+            Plataforma comunitaria con cobertura nacional de estaciones de carga rápida, compatibilidad multimarca y simulación topográfica de rutas andinas.
           </p>
           <div className="pt-2 text-[11px] text-slate-500 flex flex-col gap-1">
-            <span>Base de Datos: PostgreSQL Serverless (Neon)</span>
-            <span>Validación: Zod Type-Safe</span>
-            <span>Imágenes: Cloudinary CDN</span>
+            <span>• Cobertura nacional en tiempo real</span>
+            <span>• Directorio técnico especializado</span>
+            <span>• Comunidad activa de propietarios</span>
           </div>
         </div>
       </div>

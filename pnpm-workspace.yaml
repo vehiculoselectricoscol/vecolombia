@@ -1,0 +1,9 @@
+allowBuilds:
+  '@prisma/engines': set this to true or false
+  esbuild: set this to true or false
+  prisma: set this to true or false
+  sharp: set this to true or false
+  unrs-resolver: set this to true or false
+minimumReleaseAgeExclude:
+  - lucide-react@1.32.0
+  - maplibre-gl@6.4.1

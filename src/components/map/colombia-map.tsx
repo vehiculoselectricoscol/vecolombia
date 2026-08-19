@@ -1,14 +1,17 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ChargingStationItem, RouteItem } from "@/types";
-import { Zap, MapPin, Navigation, Eye, Layers, Compass } from "lucide-react";
+import { Zap, Compass } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import "leaflet/dist/leaflet.css";
 
 interface ColombiaMapProps {
   stations?: ChargingStationItem[];
+  routes?: RouteItem[];
   selectedRoute?: RouteItem | null;
+  onSelectRoute?: (route: RouteItem) => void;
   onSelectStation?: (station: ChargingStationItem) => void;
   heightClass?: string;
   show3DControl?: boolean;
@@ -16,285 +19,377 @@ interface ColombiaMapProps {
 
 export function ColombiaMap({
   stations = [],
+  routes = [],
   selectedRoute = null,
+  onSelectRoute,
   onSelectStation,
-  heightClass = "h-[500px]",
-  show3DControl = true,
+  heightClass = "h-[560px]",
 }: ColombiaMapProps) {
-  const [is3DMode, setIs3DMode] = useState(true);
-  const [activeStation, setActiveStation] = useState<ChargingStationItem | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<any>(null);
+  const layerGroupRef = useRef<any>(null);
+  const [mapTheme, setMapTheme] = useState<"dark" | "streets" | "topo">("dark");
+  const [activeRouteInfo, setActiveRouteInfo] = useState<RouteItem | null>(selectedRoute);
 
-  // Colombian Major Hubs Coordinates for interactive projection
-  // Lat: 0.5 to 12.5 (N), Lng: -79 to -70 (W)
-  const mapBounds = {
-    minLat: 1.0,
-    maxLat: 11.5,
-    minLng: -78.5,
-    maxLng: -71.5,
-  };
+  // Initialize Leaflet Map
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
 
-  // Convert GPS coordinates to percentage relative to container
-  const getPositionStyle = (lat: number, lng: number) => {
-    const top = ((mapBounds.maxLat - lat) / (mapBounds.maxLat - mapBounds.minLat)) * 88 + 6;
-    const left = ((lng - mapBounds.minLng) / (mapBounds.maxLng - mapBounds.minLng)) * 88 + 6;
-    return {
-      top: `${Math.min(94, Math.max(6, top))}%`,
-      left: `${Math.min(94, Math.max(6, left))}%`,
+    let isMounted = true;
+
+    async function initMap() {
+      const L = (await import("leaflet")).default;
+
+      if (!mapContainerRef.current || !isMounted) return;
+
+      // Prevent re-initialization
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+      }
+
+      // Center of Colombia: Lat 4.5709, Lng -74.2973
+      const map = L.map(mapContainerRef.current, {
+        center: [4.711, -74.0721],
+        zoom: 6.5,
+        minZoom: 5,
+        maxZoom: 18,
+        zoomControl: false,
+        attributionControl: false,
+      });
+
+      // Add Zoom Control at bottom right
+      L.control.zoom({ position: "bottomright" }).addTo(map);
+
+      // Create Layer Group for markers & routes
+      const layerGroup = L.layerGroup().addTo(map);
+      layerGroupRef.current = layerGroup;
+      mapInstanceRef.current = map;
+
+      // Set Tile Layer
+      updateTileLayer(map, L, mapTheme);
+      renderMapData(map, L, layerGroup);
+    }
+
+    initMap();
+
+    return () => {
+      isMounted = false;
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
     };
+  }, []);
+
+  // Update Tile Layer when mapTheme changes
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    import("leaflet").then((L) => {
+      updateTileLayer(mapInstanceRef.current, L.default, mapTheme);
+    });
+  }, [mapTheme]);
+
+  // Re-render markers and routes when props change
+  useEffect(() => {
+    if (!mapInstanceRef.current || !layerGroupRef.current) return;
+    import("leaflet").then((L) => {
+      renderMapData(mapInstanceRef.current, L.default, layerGroupRef.current);
+    });
+    if (selectedRoute) {
+      setActiveRouteInfo(selectedRoute);
+    }
+  }, [stations, routes, selectedRoute]);
+
+  const updateTileLayer = (map: any, L: any, theme: "dark" | "streets" | "topo") => {
+    // Remove existing tile layers
+    map.eachLayer((layer: any) => {
+      if (layer instanceof L.TileLayer) {
+        map.removeLayer(layer);
+      }
+    });
+
+    let tileUrl = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+    let subdomains = "abcd";
+
+    if (theme === "dark") {
+      tileUrl = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+    } else if (theme === "streets") {
+      tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+      subdomains = "abc";
+    } else if (theme === "topo") {
+      tileUrl = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}";
+      subdomains = "";
+    }
+
+    L.tileLayer(tileUrl, {
+      subdomains,
+      maxZoom: 19,
+    }).addTo(map);
   };
 
-  const cities = [
-    { name: "Bogotá, D.C.", lat: 4.6097, lng: -74.0817, alt: "2.640m" },
-    { name: "Medellín", lat: 6.2442, lng: -75.5812, alt: "1.495m" },
-    { name: "Cali", lat: 3.4516, lng: -76.532, alt: "995m" },
-    { name: "Barranquilla", lat: 10.9685, lng: -74.7813, alt: "18m" },
-    { name: "Bucaramanga", lat: 7.1193, lng: -73.1227, alt: "959m" },
-    { name: "Pereira", lat: 4.8133, lng: -75.6961, alt: "1.411m" },
-    { name: "Ibagué", lat: 4.4389, lng: -75.2322, alt: "1.285m" },
-  ];
+  const renderMapData = (map: any, L: any, layerGroup: any) => {
+    layerGroup.clearLayers();
+
+    // 1. Draw Real Community Route Polylines
+    routes.forEach((route) => {
+      const isSelected = selectedRoute?.id === route.id;
+      const originLat = route.originCoords.lat;
+      const originLng = route.originCoords.lng;
+      const destLat = route.destinationCoords.lat;
+      const destLng = route.destinationCoords.lng;
+
+      let polylinePoints: [number, number][] = [];
+
+      if (route.waypoints && Array.isArray(route.waypoints) && route.waypoints.length > 0) {
+        // If waypoints exist as coordinate array
+        if (Array.isArray(route.waypoints[0])) {
+          polylinePoints = route.waypoints as any;
+        } else {
+          polylinePoints = [
+            [originLat, originLng],
+            ...(route.waypoints.map((w: any) => [w.latitude || w.lat, w.longitude || w.lng]) as any),
+            [destLat, destLng],
+          ];
+        }
+      } else {
+        // Direct route vector with curvature for Andean realism
+        polylinePoints = [
+          [originLat, originLng],
+          [(originLat + destLat) / 2 + (originLng > destLng ? 0.05 : -0.05), (originLng + destLng) / 2],
+          [destLat, destLng],
+        ];
+      }
+
+      // Draw glowing polyline
+      const polyline = L.polyline(polylinePoints, {
+        color: isSelected ? "#10b981" : "#059669",
+        weight: isSelected ? 5 : 3,
+        opacity: isSelected ? 0.95 : 0.6,
+        dashArray: isSelected ? undefined : "6, 6",
+        lineCap: "round",
+        lineJoin: "round",
+      }).addTo(layerGroup);
+
+      polyline.on("click", () => {
+        setActiveRouteInfo(route);
+        if (onSelectRoute) onSelectRoute(route);
+      });
+
+      // Custom Origin HTML Pin (with start SoC %)
+      const originIcon = L.divIcon({
+        className: "custom-leaflet-pin",
+        html: `
+          <div style="
+            background: #10b981;
+            color: #022c22;
+            font-family: monospace;
+            font-size: 10px;
+            font-weight: 900;
+            padding: 3px 6px;
+            border-radius: 9999px;
+            box-shadow: 0 0 12px rgba(16, 185, 129, 0.7);
+            border: 2px solid #ffffff;
+            white-space: nowrap;
+            cursor: pointer;
+            transform: translate(-50%, -50%);
+          ">
+            ⚡ ${route.startSoc || 95}%
+          </div>
+        `,
+        iconSize: [40, 20],
+        iconAnchor: [20, 10],
+      });
+
+      const originMarker = L.marker([originLat, originLng], { icon: originIcon }).addTo(layerGroup);
+      originMarker.on("click", () => {
+        setActiveRouteInfo(route);
+        if (onSelectRoute) onSelectRoute(route);
+      });
+
+      // Custom Destination HTML Pin (with end SoC %)
+      const destIcon = L.divIcon({
+        className: "custom-leaflet-pin",
+        html: `
+          <div style="
+            background: #06b6d4;
+            color: #083344;
+            font-family: monospace;
+            font-size: 10px;
+            font-weight: 900;
+            padding: 3px 6px;
+            border-radius: 9999px;
+            box-shadow: 0 0 12px rgba(6, 182, 212, 0.7);
+            border: 2px solid #ffffff;
+            white-space: nowrap;
+            cursor: pointer;
+            transform: translate(-50%, -50%);
+          ">
+            🏁 ${route.endSoc || 42}%
+          </div>
+        `,
+        iconSize: [40, 20],
+        iconAnchor: [20, 10],
+      });
+
+      const destMarker = L.marker([destLat, destLng], { icon: destIcon }).addTo(layerGroup);
+      destMarker.on("click", () => {
+        setActiveRouteInfo(route);
+        if (onSelectRoute) onSelectRoute(route);
+      });
+    });
+
+    // 2. Draw Verified Charging Stations
+    stations.forEach((st) => {
+      const stationIcon = L.divIcon({
+        className: "custom-station-pin",
+        html: `
+          <div style="
+            background: #047857;
+            color: #ffffff;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+            border: 2px solid #a7f3d0;
+            cursor: pointer;
+          ">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+          </div>
+        `,
+        iconSize: [26, 26],
+        iconAnchor: [13, 13],
+      });
+
+      const marker = L.marker([st.latitude, st.longitude], { icon: stationIcon }).addTo(layerGroup);
+      marker.on("click", () => {
+        if (onSelectStation) onSelectStation(st);
+      });
+
+      marker.bindPopup(`
+        <div style="color: #0f172a; font-family: sans-serif; font-size: 12px; padding: 2px;">
+          <strong style="font-size: 13px; color: #047857;">${st.name}</strong><br/>
+          <span>${st.operator} • ${st.city}</span><br/>
+          <span style="font-weight: bold; color: #0284c7;">${st.priceInfo || "Carga Rápida DC"}</span>
+        </div>
+      `);
+    });
+  };
+
+  const handleResetView = () => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.setView([4.711, -74.0721], 6.5, { animate: true });
+    }
+  };
 
   return (
     <div
-      className={`relative w-full ${heightClass} rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-950 shadow-2xl transition-all duration-500`}
+      className={`relative w-full ${heightClass} rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-950 shadow-2xl transition-all duration-300`}
     >
-      {/* 3D Perspective Canvas Container */}
-      <div
-        className={`w-full h-full relative transition-all duration-700 ease-out ${
-          is3DMode ? "perspective-[1000px]" : ""
-        }`}
-      >
-        <div
-          className={`w-full h-full relative transition-transform duration-700 ${
-            is3DMode ? "rotate-x-[24deg] scale-[0.98] -translate-y-2" : ""
-          }`}
-          style={{
-            backgroundImage: `
-              radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.08) 0%, transparent 70%),
-              linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-              linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px)
-            `,
-            backgroundSize: "100% 100%, 35px 35px, 35px 35px",
-          }}
+      {/* Real Leaflet Map Container */}
+      <div ref={mapContainerRef} className="w-full h-full z-0" />
+
+      {/* Map Layer Selector & Controls */}
+      <div className="absolute top-4 right-4 z-[500] flex items-center gap-2">
+        <div className="flex bg-slate-900/90 backdrop-blur-md p-1 rounded-2xl border border-slate-800 shadow-xl">
+          <button
+            type="button"
+            onClick={() => setMapTheme("dark")}
+            className={`px-2.5 py-1 rounded-xl text-xs font-semibold transition-all ${
+              mapTheme === "dark" ? "bg-emerald-600 text-white shadow-md" : "text-slate-400 hover:text-white"
+            }`}
+          >
+            Oscuro
+          </button>
+          <button
+            type="button"
+            onClick={() => setMapTheme("streets")}
+            className={`px-2.5 py-1 rounded-xl text-xs font-semibold transition-all ${
+              mapTheme === "streets" ? "bg-emerald-600 text-white shadow-md" : "text-slate-400 hover:text-white"
+            }`}
+          >
+            Calles
+          </button>
+          <button
+            type="button"
+            onClick={() => setMapTheme("topo")}
+            className={`px-2.5 py-1 rounded-xl text-xs font-semibold transition-all ${
+              mapTheme === "topo" ? "bg-emerald-600 text-white shadow-md" : "text-slate-400 hover:text-white"
+            }`}
+          >
+            Relieve
+          </button>
+        </div>
+
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleResetView}
+          className="h-8 px-2.5 bg-slate-900/90 backdrop-blur-md border-slate-800 text-slate-200 hover:bg-slate-800"
+          title="Centrar Colombia"
         >
-          {/* Topographic Contours & Colombia Outline Silhouette */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20 dark:opacity-30">
-            <svg
-              viewBox="0 0 500 650"
-              className="w-[85%] h-[85%] stroke-emerald-500 fill-emerald-950/20"
-              strokeWidth="1.5"
-            >
-              {/* Simplified Colombia Shape */}
-              <path
-                d="M 230 40 
-                   Q 260 50 310 110 
-                   Q 330 160 300 230 
-                   Q 350 280 430 310 
-                   Q 440 370 380 440 
-                   Q 350 560 280 620 
-                   Q 230 630 190 560 
-                   Q 150 490 100 450 
-                   Q 70 390 90 320 
-                   Q 70 230 120 180 
-                   Q 160 140 210 110 Z"
-              />
-              {/* Cordilleras (Andes) */}
-              <path
-                d="M 120 460 Q 180 320 220 180"
-                stroke="#06b6d4"
-                strokeDasharray="4 4"
-                fill="none"
-              />
-              <path
-                d="M 160 460 Q 220 300 250 160"
-                stroke="#10b981"
-                strokeDasharray="4 4"
-                fill="none"
-              />
-              <path
-                d="M 190 460 Q 260 290 290 170"
-                stroke="#06b6d4"
-                strokeDasharray="4 4"
-                fill="none"
-              />
-            </svg>
+          <Compass className="w-3.5 h-3.5 text-emerald-400" />
+        </Button>
+      </div>
+
+      {/* Live Telemetry Overlay Card for Selected Route */}
+      {activeRouteInfo && (
+        <div className="absolute bottom-4 left-4 right-4 sm:right-auto sm:max-w-md z-[500] rounded-2xl bg-slate-900/95 backdrop-blur-md border border-emerald-500/30 p-4 shadow-2xl space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 font-heading">
+                  Ruta Comunitaria en Colombia
+                </span>
+              </div>
+              <h3 className="text-sm font-bold font-heading text-white mt-0.5">
+                {activeRouteInfo.originCity} ➔ {activeRouteInfo.destinationCity}
+              </h3>
+            </div>
+
+            <Badge variant="default" className="text-[10px] shrink-0">
+              {activeRouteInfo.vehicleUsed?.brand || "EV"} {activeRouteInfo.vehicleUsed?.model || ""}
+            </Badge>
           </div>
 
-          {/* Selected Route Polyline (if any) */}
-          {selectedRoute && (
-            <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
-              <defs>
-                <linearGradient id="routeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#10b981" />
-                  <stop offset="50%" stopColor="#06b6d4" />
-                  <stop offset="100%" stopColor="#10b981" />
-                </linearGradient>
-                <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-                  <feGaussianBlur stdDeviation="3" result="glow" />
-                  <feComposite in="SourceGraphic" in2="glow" operator="over" />
-                </filter>
-              </defs>
-              {selectedRoute.waypoints && selectedRoute.waypoints.length > 1 && (
-                <polyline
-                  points={selectedRoute.waypoints
-                    .map((w) => {
-                      const pos = getPositionStyle(w.latitude, w.longitude);
-                      const topNum = (parseFloat(pos.top) / 100) * 500;
-                      const leftNum = (parseFloat(pos.left) / 100) * 700;
-                      return `${leftNum},${topNum}`;
-                    })
-                    .join(" ")}
-                  fill="none"
-                  stroke="url(#routeGradient)"
-                  strokeWidth="4"
-                  strokeDasharray="8 4"
-                  strokeLinecap="round"
-                  filter="url(#glow)"
-                  className="animate-pulse"
-                />
-              )}
-            </svg>
+          <div className="grid grid-cols-4 gap-2 text-center text-xs font-mono-spec">
+            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
+              <span className="text-[9px] text-slate-400 block">Distancia</span>
+              <span className="font-bold text-white">{activeRouteInfo.distanceKm} km</span>
+            </div>
+            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
+              <span className="text-[9px] text-slate-400 block">Batería</span>
+              <span className="font-bold text-emerald-400">
+                {activeRouteInfo.startSoc || 95}% ➔ {activeRouteInfo.endSoc || 42}%
+              </span>
+            </div>
+            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
+              <span className="text-[9px] text-slate-400 block">Consumo</span>
+              <span className="font-bold text-cyan-400">{activeRouteInfo.actualKwhUsed || 24.5} kWh</span>
+            </div>
+            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
+              <span className="text-[9px] text-slate-400 block">Eficiencia</span>
+              <span className="font-bold text-amber-400">{activeRouteInfo.realEfficiency || 16.8}</span>
+            </div>
+          </div>
+
+          {activeRouteInfo.description && (
+            <p className="text-[11px] text-slate-300 italic line-clamp-2">
+              &quot;{activeRouteInfo.description}&quot;
+            </p>
           )}
 
-          {/* Major Cities Pins */}
-          {cities.map((city) => {
-            const pos = getPositionStyle(city.lat, city.lng);
-            return (
-              <div
-                key={city.name}
-                className="absolute transform -translate-x-1/2 -translate-y-1/2 z-20 group"
-                style={pos}
-              >
-                <div className="flex flex-col items-center">
-                  <div className="w-2.5 h-2.5 rounded-full bg-slate-300 border border-slate-900 group-hover:scale-150 transition-transform" />
-                  <span className="text-[10px] font-bold text-slate-300 bg-slate-950/80 px-1.5 py-0.5 rounded backdrop-blur-sm mt-1 whitespace-nowrap border border-slate-800">
-                    {city.name}
-                  </span>
-                  <span className="text-[8px] font-mono-spec text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {city.alt}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Charging Stations Pins */}
-          {stations.map((st) => {
-            const pos = getPositionStyle(st.latitude, st.longitude);
-            const hasFastDC = st.connectors.some(
-              (c) => (c.type === "CCS2" || c.type === "GB_T_DC") && c.powerKw >= 50
-            );
-
-            return (
-              <div
-                key={st.id}
-                className="absolute transform -translate-x-1/2 -translate-y-1/2 z-30 cursor-pointer group"
-                style={pos}
-                onClick={() => {
-                  setActiveStation(st);
-                  onSelectStation?.(st);
-                }}
-              >
-                {/* Ping animation for high-power DC stations */}
-                {hasFastDC && (
-                  <span className="absolute -inset-1 rounded-full bg-emerald-500 opacity-40 animate-ping" />
-                )}
-
-                <div
-                  className={`relative flex items-center justify-center w-7 h-7 rounded-xl shadow-lg transition-all duration-200 group-hover:scale-125 ${
-                    hasFastDC
-                      ? "bg-gradient-to-tr from-emerald-600 to-teal-400 text-white shadow-emerald-500/40"
-                      : "bg-gradient-to-tr from-blue-600 to-cyan-500 text-white shadow-blue-500/40"
-                  }`}
-                >
-                  <Zap className="w-4 h-4 fill-white text-white" />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Floating Map Controls */}
-      <div className="absolute top-4 right-4 z-40 flex items-center gap-2">
-        {show3DControl && (
-          <Button
-            size="sm"
-            variant={is3DMode ? "electric" : "outline"}
-            className="text-xs h-8 gap-1.5 shadow-lg backdrop-blur-md"
-            onClick={() => setIs3DMode(!is3DMode)}
-          >
-            <Compass className="w-3.5 h-3.5" />
-            {is3DMode ? "Vista 3D Andina" : "Vista 2D Plana"}
-          </Button>
-        )}
-      </div>
-
-      {/* Map Legend Overlay */}
-      <div className="absolute bottom-4 left-4 z-40 bg-slate-900/85 backdrop-blur-md border border-slate-800 rounded-xl p-2.5 text-xs text-slate-300 space-y-1.5 shadow-xl max-w-xs">
-        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 font-heading">
-          Red Nacional VE Colombia
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded bg-emerald-500 shadow-sm shadow-emerald-500/50" />
-            <span className="text-[11px]">DC Rápida (50-150 kW)</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded bg-blue-500" />
-            <span className="text-[11px]">AC Media (7-22 kW)</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Active Station Popover Detail */}
-      {activeStation && (
-        <div className="absolute top-4 left-4 z-40 bg-slate-900/95 backdrop-blur-lg border border-emerald-500/40 rounded-2xl p-4 text-xs text-white shadow-2xl max-w-sm animate-in fade-in slide-in-from-top-4 duration-200">
-          <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-2 mb-2">
-            <div>
-              <span className="text-[10px] font-mono-spec font-bold text-emerald-400 uppercase tracking-wider">
-                {activeStation.operator}
-              </span>
-              <h4 className="text-sm font-bold font-heading text-white">{activeStation.name}</h4>
-              <p className="text-[11px] text-slate-400">{activeStation.city}, {activeStation.department}</p>
+          {activeRouteInfo.chargingTelemetry && (activeRouteInfo.chargingTelemetry as any).length > 0 && (
+            <div className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono-spec">
+              <Zap className="w-3 h-3" />
+              Recarga en: {(activeRouteInfo.chargingTelemetry as any).map((s: any) => s.stationName).join(", ")}
             </div>
-            <button
-              type="button"
-              onClick={() => setActiveStation(null)}
-              className="text-slate-400 hover:text-white p-1"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex flex-wrap gap-1.5">
-              {activeStation.connectors.map((c, i) => (
-                <Badge key={i} variant="fastCharge" className="text-[10px]">
-                  {c.type} • {c.powerKw} kW
-                </Badge>
-              ))}
-            </div>
-
-            {activeStation.priceInfo && (
-              <p className="text-[11px] text-slate-300">
-                Tarifa: <span className="font-semibold text-emerald-400">{activeStation.priceInfo}</span>
-              </p>
-            )}
-
-            <div className="flex items-center justify-between pt-1">
-              <span className="text-[11px] text-slate-400">
-                ⭐ {activeStation.rating.toFixed(1)} ({activeStation.reviewsCount} reseñas)
-              </span>
-              <Button
-                size="sm"
-                variant="electric"
-                className="h-7 text-xs font-semibold"
-                onClick={() => onSelectStation?.(activeStation)}
-              >
-                Ver Ficha & Check-in
-              </Button>
-            </div>
-          </div>
+          )}
         </div>
       )}
     </div>

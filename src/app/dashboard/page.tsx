@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Car,
   Compass,
@@ -10,11 +10,10 @@ import {
   Phone,
   Mail,
   Trash2,
-  Tag,
-  Clock,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -23,108 +22,204 @@ import { Slider } from "@/components/ui/slider";
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Avatar } from "@/components/ui/avatar";
 import { ConnectorBadge } from "@/components/connector-badge";
-import { DEMO_USER, INITIAL_VEHICLES, INITIAL_ROUTES, INITIAL_MARKETPLACE } from "@/lib/data/seed-data";
-import { UserProfile, UserVehicleItem, MarketplaceListingItem } from "@/types";
 import { formatCOP } from "@/lib/utils";
 import { toast } from "sonner";
-import { userProfileSchema, userVehicleSchema } from "@/lib/validations";
 
 export default function UserDashboardPage() {
-  const [user, setUser] = useState<UserProfile>(DEMO_USER);
-  const [vehicles, setVehicles] = useState<UserVehicleItem[]>(DEMO_USER.vehicles || []);
-  const [myListings, setMyListings] = useState<MarketplaceListingItem[]>(
-    INITIAL_MARKETPLACE.filter((m) => m.userId === DEMO_USER.id)
-  );
+  const [user, setUser] = useState<any>(null);
+  const [vehicles, setVehicles] = useState<any[]>([]);
+  const [catalogVehicles, setCatalogVehicles] = useState<any[]>([]);
+  const [myListings, setMyListings] = useState<any[]>([]);
+  const [myRoutes, setMyRoutes] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Edit Profile States
-  const [name, setName] = useState(user.name);
-  const [phone, setPhone] = useState(user.phone || "");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
 
-  // Add Vehicle Modal States
+  // Dynamic Add Vehicle Modal States
   const [isAddVehicleOpen, setIsAddVehicleOpen] = useState(false);
-  const [selectedVehicleCatalogId, setSelectedVehicleCatalogId] = useState(INITIAL_VEHICLES[0].id);
+  const [selectedBrand, setSelectedBrand] = useState<string>("");
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string>("");
+  const [selectedModelYear, setSelectedModelYear] = useState<number>(2024);
   const [nickname, setNickname] = useState("");
   const [plate, setPlate] = useState("");
   const [batteryHealth, setBatteryHealth] = useState(99.0);
 
-  const handleUpdateProfile = () => {
+  const fetchUserProfileAndCatalog = async () => {
+    setLoading(true);
     try {
-      const validated = userProfileSchema.parse({ name, phone });
-      setUser({ ...user, name: validated.name, phone: validated.phone });
-      toast.success("¡Perfil actualizado con éxito!");
-    } catch (err: any) {
-      if (err.errors && err.errors[0]) {
-        toast.error(err.errors[0].message);
-      } else {
-        toast.error("Por favor verifica los datos ingresados.");
+      const [profileRes, catalogRes] = await Promise.all([
+        fetch("/api/user/profile"),
+        fetch("/api/vehicles"),
+      ]);
+
+      const profileData = await profileRes.json();
+      const catalogData = await catalogRes.json();
+
+      if (profileData.success && profileData.data) {
+        setUser(profileData.data);
+        setName(profileData.data.name || "");
+        setPhone(profileData.data.phone || "");
+        setVehicles(profileData.data.vehicles || []);
+        setMyListings(profileData.data.marketplaceListings || []);
+        setMyRoutes(profileData.data.routes || []);
       }
+
+      if (catalogData.success && catalogData.data) {
+        setCatalogVehicles(catalogData.data);
+        if (catalogData.data.length > 0) {
+          setSelectedBrand(catalogData.data[0].brand);
+          setSelectedVehicleId(catalogData.data[0].id);
+          setSelectedModelYear(catalogData.data[0].year || 2024);
+        }
+      }
+    } catch {
+      toast.error("Error cargando información de perfil");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleAddVehicle = () => {
+  useEffect(() => {
+    fetchUserProfileAndCatalog();
+  }, []);
+
+  // Brands list from dynamic catalog
+  const availableBrands = useMemo(() => {
+    return Array.from(new Set(catalogVehicles.map((v) => v.brand))).sort();
+  }, [catalogVehicles]);
+
+  // Models filtered by selected brand
+  const filteredModels = useMemo(() => {
+    if (!selectedBrand) return catalogVehicles;
+    return catalogVehicles.filter((v) => v.brand.toLowerCase() === selectedBrand.toLowerCase());
+  }, [catalogVehicles, selectedBrand]);
+
+  // When brand changes, update selected vehicle
+  const handleBrandChange = (brand: string) => {
+    setSelectedBrand(brand);
+    const firstModel = catalogVehicles.find((v) => v.brand.toLowerCase() === brand.toLowerCase());
+    if (firstModel) {
+      setSelectedVehicleId(firstModel.id);
+      setSelectedModelYear(firstModel.year || 2024);
+    }
+  };
+
+  const selectedVehicleObj = useMemo(() => {
+    return catalogVehicles.find((v) => v.id === selectedVehicleId) || catalogVehicles[0];
+  }, [catalogVehicles, selectedVehicleId]);
+
+  // Generate available years for the selected model
+  const availableYears = useMemo(() => {
+    const currentYear = new Date().getFullYear() + 1; // e.g. 2026
+    const start = selectedVehicleObj?.yearStart || 2018;
+    const end = selectedVehicleObj?.yearEnd || currentYear;
+    const years: number[] = [];
+    for (let y = end; y >= start; y--) {
+      years.push(y);
+    }
+    return years;
+  }, [selectedVehicleObj]);
+
+  const handleUpdateProfile = async () => {
     try {
-      const validated = userVehicleSchema.parse({
-        vehicleId: selectedVehicleCatalogId,
-        nickname,
-        licensePlate: plate,
-        batteryHealth,
-        isPrimary: vehicles.length === 0,
+      const res = await fetch("/api/user/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, phone }),
       });
 
-      const catalogCar = INITIAL_VEHICLES.find((v) => v.id === validated.vehicleId) || INITIAL_VEHICLES[0];
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error);
 
-      const newUV: UserVehicleItem = {
-        id: `uv-${Date.now()}`,
-        userId: user.id,
-        vehicleId: validated.vehicleId,
-        nickname: validated.nickname || `${catalogCar.brand} ${catalogCar.model}`,
-        licensePlate: validated.licensePlate || "EV-***",
-        batteryHealth: validated.batteryHealth || 100,
-        isPrimary: validated.isPrimary || false,
-        vehicle: catalogCar,
-      };
+      toast.success("¡Perfil actualizado con éxito!");
+      fetchUserProfileAndCatalog();
+    } catch (err: any) {
+      toast.error(err.message || "Error al actualizar perfil");
+    }
+  };
 
-      setVehicles([...vehicles, newUV]);
+  const handleAddVehicle = async () => {
+    if (!selectedVehicleId) {
+      toast.error("Por favor selecciona una marca y línea de vehículo");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/user/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vehicleId: selectedVehicleId,
+          modelYear: Number(selectedModelYear),
+          nickname: nickname || `${selectedVehicleObj?.brand} ${selectedVehicleObj?.model} (${selectedModelYear})`,
+          licensePlate: plate,
+          batteryHealth,
+          isPrimary: vehicles.length === 0,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error);
+
+      toast.success("¡Vehículo agregado a tu garaje!");
       setIsAddVehicleOpen(false);
       setNickname("");
       setPlate("");
-      toast.success("¡Vehículo agregado a tu garaje!");
+      fetchUserProfileAndCatalog();
     } catch (err: any) {
-      if (err.errors && err.errors[0]) {
-        toast.error(err.errors[0].message);
-      } else {
-        toast.error("Por favor completa los campos del vehículo.");
-      }
+      toast.error(err.message || "Error al agregar vehículo");
     }
   };
 
-  const handleDeleteVehicle = (id: string) => {
-    setVehicles(vehicles.filter((v) => v.id !== id));
-    toast.info("Vehículo eliminado del garaje");
+  const handleDeleteVehicle = async (userVehicleId: string) => {
+    try {
+      const res = await fetch(`/api/user/profile?userVehicleId=${userVehicleId}`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error);
+
+      toast.info("Vehículo eliminado de tu garaje");
+      setVehicles((prev) => prev.filter((v) => v.id !== userVehicleId));
+    } catch (err: any) {
+      toast.error(err.message || "Error eliminando vehículo");
+    }
   };
+
+  if (loading && !user) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-20 text-center space-y-3">
+        <RefreshCw className="w-8 h-8 text-emerald-500 animate-spin mx-auto" />
+        <p className="text-sm text-muted-foreground">Cargando perfil...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Header Profile Bar */}
       <div className="p-6 rounded-3xl bg-card border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
-          <Avatar src={user.image} fallback="AR" className="w-16 h-16 text-lg" />
+          <Avatar src={user?.image} fallback="VE" className="w-16 h-16 text-lg" />
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-black font-heading text-foreground">{user.name}</h1>
+              <h1 className="text-2xl font-black font-heading text-foreground">{user?.name}</h1>
               <Badge variant="default" className="text-[10px]">
-                {user.role}
+                {user?.role}
               </Badge>
             </div>
             <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
                 <Mail className="w-3.5 h-3.5 text-emerald-500" />
-                {user.email}
+                {user?.email}
               </span>
-              {user.phone && (
+              {user?.phone && (
                 <span className="flex items-center gap-1 font-mono-spec">
                   <Phone className="w-3.5 h-3.5 text-cyan-400" />
-                  {user.phone}
+                  {user?.phone}
                 </span>
               )}
             </div>
@@ -147,7 +242,7 @@ export default function UserDashboardPage() {
         <TabsList className="grid grid-cols-4 sm:w-[600px]">
           <TabsTrigger value="garaje" className="gap-1.5">
             <Car className="w-4 h-4" />
-            Mi Garaje EV
+            Mi Garaje EV ({vehicles.length})
           </TabsTrigger>
           <TabsTrigger value="marketplace" className="gap-1.5">
             <ShoppingBag className="w-4 h-4" />
@@ -155,7 +250,7 @@ export default function UserDashboardPage() {
           </TabsTrigger>
           <TabsTrigger value="rutas" className="gap-1.5">
             <Compass className="w-4 h-4" />
-            Mis Rutas
+            Mis Rutas ({myRoutes.length})
           </TabsTrigger>
           <TabsTrigger value="perfil" className="gap-1.5">
             <Settings className="w-4 h-4" />
@@ -168,71 +263,84 @@ export default function UserDashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-bold font-heading text-foreground">
-                Vehículos Registrados en Colombia
+                Tus Vehículos Eléctricos en Garaje
               </h2>
               <p className="text-xs text-muted-foreground">
-                Mantén el registro de salud de batería (SOH %) y especificaciones de carga de tu carro.
+                Monitorea el estado de salud de batería (SOH %) y compatibilidad con la red de electrolineras de Colombia.
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {vehicles.map((uv) => (
-              <Card key={uv.id} className="p-6 relative overflow-hidden group hover:border-emerald-500/50 transition-all">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-bold font-heading text-foreground">
-                        {uv.nickname || `${uv.vehicle.brand} ${uv.vehicle.model}`}
-                      </h3>
-                      {uv.isPrimary && (
-                        <Badge variant="default" className="text-[10px]">
-                          Principal
-                        </Badge>
-                      )}
+          {vehicles.length === 0 ? (
+            <Card className="p-8 text-center space-y-3 bg-muted/20">
+              <Car className="w-10 h-10 text-emerald-500 mx-auto opacity-60" />
+              <p className="text-sm font-semibold text-foreground">Aún no has registrado ningún vehículo en tu garaje.</p>
+              <Button size="sm" variant="electric" onClick={() => setIsAddVehicleOpen(true)}>
+                Agregar mi carro eléctrico
+              </Button>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {vehicles.map((uv) => (
+                <Card key={uv.id} className="p-6 relative overflow-hidden group hover:border-emerald-500/50 transition-all">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-bold font-heading text-foreground">
+                          {uv.nickname || `${uv.vehicle?.brand} ${uv.vehicle?.model}`}
+                        </h3>
+                        {uv.isPrimary && (
+                          <Badge variant="default" className="text-[10px]">
+                            Principal
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {uv.vehicle?.brand} {uv.vehicle?.model} • Modelo Año: <strong>{uv.modelYear || uv.vehicle?.year}</strong> • Placa: {uv.licensePlate || "Privada"}
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {uv.vehicle.brand} {uv.vehicle.model} ({uv.vehicle.year}) • Placa: {uv.licensePlate || "Privada"}
-                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteVehicle(uv.id)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                      title="Eliminar del Garaje"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteVehicle(uv.id)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+                  <div className="grid grid-cols-3 gap-3 my-4 p-3 rounded-xl bg-slate-100 dark:bg-slate-900 text-xs font-mono-spec">
+                    <div>
+                      <span className="text-muted-foreground block text-[10px]">Batería Pack</span>
+                      <span className="font-bold text-foreground">{uv.vehicle?.batteryKwh} kWh</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[10px]">Salud (SOH)</span>
+                      <span className="font-bold text-emerald-500">{uv.batteryHealth || 99}%</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[10px]">Carga DC Máx</span>
+                      <span className="font-bold text-cyan-400">{uv.vehicle?.maxDcKw} kW</span>
+                    </div>
+                  </div>
 
-                <div className="grid grid-cols-3 gap-3 my-4 p-3 rounded-xl bg-slate-100 dark:bg-slate-900 text-xs font-mono-spec">
-                  <div>
-                    <span className="text-muted-foreground block text-[10px]">Batería Pack</span>
-                    <span className="font-bold text-foreground">{uv.vehicle.batteryKwh} kWh</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block text-[10px]">Salud (SOH)</span>
-                    <span className="font-bold text-emerald-500">{uv.batteryHealth || 99}%</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block text-[10px]">Carga DC Máx</span>
-                    <span className="font-bold text-cyan-400">{uv.vehicle.maxDcKw} kW</span>
-                  </div>
-                </div>
-
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
-                    Conectores Compatibles:
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {uv.vehicle.connectorTypes.map((c, i) => (
-                      <ConnectorBadge key={i} type={c} />
-                    ))}
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
+                  {uv.vehicle?.connectorTypes && (
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
+                        Conectores de Carga:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {uv.vehicle.connectorTypes.map((c: any, i: number) => (
+                          <ConnectorBadge key={i} type={c} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         {/* Tab 2: Mis Anuncios Marketplace */}
@@ -242,44 +350,48 @@ export default function UserDashboardPage() {
               <h2 className="text-xl font-bold font-heading text-foreground">
                 Tus Publicaciones en el Marketplace EV
               </h2>
-              <p className="text-xs text-muted-foreground">
-                Artículos, cargadores o vehículos que tienes publicados y su estado de moderación.
-              </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {myListings.map((item) => (
-              <Card key={item.id} className="p-5 flex flex-col justify-between space-y-4">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Badge variant={item.category === "VEHICLE_COMPLETE" ? "default" : "secondary"}>
-                      {item.category}
-                    </Badge>
-                    <Badge variant={item.moderation === "APPROVED" ? "default" : "amber"}>
-                      {item.moderation === "APPROVED" ? "Activo / Aprobado" : "En Revisión"}
-                    </Badge>
+          {myListings.length === 0 ? (
+            <Card className="p-8 text-center space-y-3 bg-muted/20">
+              <ShoppingBag className="w-10 h-10 text-emerald-500 mx-auto opacity-60" />
+              <p className="text-sm font-semibold text-foreground">No tienes publicaciones activas en el Marketplace.</p>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {myListings.map((item) => (
+                <Card key={item.id} className="p-5 flex flex-col justify-between space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Badge variant={item.category === "VEHICLE_COMPLETE" ? "default" : "secondary"}>
+                        {item.category}
+                      </Badge>
+                      <Badge variant={item.moderation === "APPROVED" ? "default" : "amber"}>
+                        {item.moderation === "APPROVED" ? "Activo" : "En Revisión"}
+                      </Badge>
+                    </div>
+
+                    <h3 className="text-base font-bold font-heading text-foreground">{item.title}</h3>
+                    <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>
                   </div>
 
-                  <h3 className="text-base font-bold font-heading text-foreground">{item.title}</h3>
-                  <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>
-                </div>
-
-                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                  <span className="font-mono-spec font-bold text-sm text-emerald-500">
-                    {formatCOP(item.priceCop)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">{item.city}</span>
-                </div>
-              </Card>
-            ))}
-          </div>
+                  <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <span className="font-mono-spec font-bold text-sm text-emerald-500">
+                      {formatCOP(item.priceCop)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{item.city}</span>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         {/* Tab 3: Mis Rutas */}
         <TabsContent value="rutas" className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {INITIAL_ROUTES.slice(0, 2).map((route) => (
+            {myRoutes.map((route) => (
               <Card key={route.id} className="p-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-emerald-500 font-heading">
@@ -291,10 +403,6 @@ export default function UserDashboardPage() {
                 </div>
                 <h4 className="text-sm font-bold font-heading text-foreground">{route.title}</h4>
                 <p className="text-xs text-muted-foreground line-clamp-2">{route.description}</p>
-                <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Desnivel: +{route.elevationGainM}m</span>
-                  <Badge variant="default" className="text-[10px]">Aprobada</Badge>
-                </div>
               </Card>
             ))}
           </div>
@@ -303,13 +411,6 @@ export default function UserDashboardPage() {
         {/* Tab 4: Configuración */}
         <TabsContent value="perfil">
           <Card className="max-w-xl p-6 space-y-5">
-            <CardHeader className="p-0 pb-2">
-              <CardTitle className="text-base font-bold">Datos Personales</CardTitle>
-              <CardDescription className="text-xs">
-                Información visible para otros miembros de la comunidad VE Colombia.
-              </CardDescription>
-            </CardHeader>
-
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-semibold uppercase text-muted-foreground">
@@ -324,14 +425,14 @@ export default function UserDashboardPage() {
 
               <div>
                 <label className="text-xs font-semibold uppercase text-muted-foreground">
-                  Correo Electrónico (Google OAuth)
+                  Correo Electrónico
                 </label>
-                <Input value={user.email} disabled className="mt-1 opacity-70" />
+                <Input value={user?.email || ""} disabled className="mt-1 opacity-70" />
               </div>
 
               <div>
                 <label className="text-xs font-semibold uppercase text-muted-foreground">
-                  Celular / WhatsApp (Para contacto técnico y ventas)
+                  Celular / WhatsApp
                 </label>
                 <Input
                   value={phone}
@@ -342,42 +443,91 @@ export default function UserDashboardPage() {
               </div>
 
               <Button variant="electric" onClick={handleUpdateProfile} className="w-full font-semibold">
-                Guardar Cambios de Perfil
+                Guardar Cambios
               </Button>
             </div>
           </Card>
         </TabsContent>
       </Tabs>
 
-      {/* Add Vehicle Modal */}
+      {/* Dynamic Add Vehicle Modal */}
       <Dialog open={isAddVehicleOpen} onOpenChange={setIsAddVehicleOpen}>
         <DialogHeader onClose={() => setIsAddVehicleOpen(false)}>
           <DialogTitle>Agregar Carro a Mi Garaje EV</DialogTitle>
           <DialogDescription>
-            Selecciona tu modelo para vincular las especificaciones de carga y autonomía.
+            Selecciona la marca, la línea del catálogo y el año específico de tu modelo.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <Select
-            label="Modelo del Catálogo"
-            value={selectedVehicleCatalogId}
-            onChange={(e) => setSelectedVehicleCatalogId(e.target.value)}
-          >
-            {INITIAL_VEHICLES.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.brand} {v.model} ({v.year} • {v.batteryKwh} kWh)
-              </option>
-            ))}
-          </Select>
+          {/* Step 1: Select Brand */}
+          <div>
+            <Select
+              label="Paso 1: Marca del Vehículo"
+              value={selectedBrand}
+              onChange={(e) => handleBrandChange(e.target.value)}
+            >
+              {availableBrands.map((brand) => (
+                <option key={brand} value={brand}>
+                  {brand}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          {/* Step 2: Select Model / Line */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Select
+              label="Paso 2: Línea / Modelo"
+              value={selectedVehicleId}
+              onChange={(e) => setSelectedVehicleId(e.target.value)}
+            >
+              {filteredModels.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.model} ({v.batteryKwh} kWh)
+                </option>
+              ))}
+            </Select>
+
+            {/* Step 3: Select Model Year */}
+            <Select
+              label="Paso 3: Año del Modelo"
+              value={selectedModelYear}
+              onChange={(e) => setSelectedModelYear(Number(e.target.value))}
+            >
+              {availableYears.map((year) => (
+                <option key={year} value={year}>
+                  Modelo {year}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          {/* Vehicle specs summary card */}
+          {selectedVehicleObj && (
+            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs font-mono-spec flex items-center justify-between">
+              <div>
+                <span className="text-slate-400 block text-[10px]">Batería Pack</span>
+                <span className="text-white font-bold">{selectedVehicleObj.batteryKwh} kWh</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px]">Autonomía Real</span>
+                <span className="text-emerald-400 font-bold">{selectedVehicleObj.realRangeKm} km</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px]">Carga DC Máx</span>
+                <span className="text-cyan-400 font-bold">{selectedVehicleObj.maxDcKw} kW</span>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold uppercase text-muted-foreground">
-                Apodo / Nombre
+                Apodo / Nombre Personalizado
               </label>
               <Input
-                placeholder="Ej. Mi Delfín Eléctrico"
+                placeholder={`Ej. Mi ${selectedVehicleObj?.brand || "EV"}`}
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
                 className="mt-1"
@@ -412,7 +562,7 @@ export default function UserDashboardPage() {
             Cancelar
           </Button>
           <Button variant="electric" onClick={handleAddVehicle}>
-            Guardar en Mi Garaje
+            Vincular a Mi Garaje
           </Button>
         </DialogFooter>
       </Dialog>

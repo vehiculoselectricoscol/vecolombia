@@ -1,36 +1,32 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Wrench,
   MapPin,
-  Phone,
   MessageCircle,
   ShieldCheck,
-  Star,
   Search,
   PlusCircle,
   Award,
-  CheckCircle,
-  ExternalLink,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { INITIAL_WORKSHOPS } from "@/lib/data/seed-data";
-import { WorkshopItem, WorkshopReviewItem } from "@/types";
+import { WorkshopItem } from "@/types";
 import { toast } from "sonner";
-import { workshopSubmissionSchema, workshopReviewSchema } from "@/lib/validations";
 
 export default function TalleresPage() {
-  const [workshops, setWorkshops] = useState<WorkshopItem[]>(INITIAL_WORKSHOPS);
+  const [workshops, setWorkshops] = useState<WorkshopItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterBrand, setFilterBrand] = useState("ALL");
   const [filterSpecialty, setFilterSpecialty] = useState("ALL");
+  const [loading, setLoading] = useState(true);
 
   // Selected Workshop for Detail & Review Modal
   const [selectedWorkshop, setSelectedWorkshop] = useState<WorkshopItem | null>(null);
@@ -52,6 +48,25 @@ export default function TalleresPage() {
   const [newSpecialties, setNewSpecialties] = useState("Diagnóstico HV, Baterías BMS");
   const [newBrands, setNewBrands] = useState("BYD, Renault, Tesla");
 
+  const fetchWorkshops = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/workshops");
+      const data = await res.json();
+      if (data.success) {
+        setWorkshops(data.data);
+      }
+    } catch {
+      toast.error("Error conectando con la base de datos");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchWorkshops();
+  }, []);
+
   const filteredWorkshops = workshops.filter((ws) => {
     const matchSearch =
       ws.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -60,123 +75,76 @@ export default function TalleresPage() {
 
     const matchBrand =
       filterBrand === "ALL" ||
-      ws.supportedBrands.includes(filterBrand) ||
-      ws.supportedBrands.includes("Todas");
+      (Array.isArray(ws.supportedBrands) &&
+        (ws.supportedBrands.includes(filterBrand) || ws.supportedBrands.includes("Todas")));
 
     const matchSpecialty =
       filterSpecialty === "ALL" ||
-      ws.specialties.some((s) => s.toLowerCase().includes(filterSpecialty.toLowerCase()));
+      (Array.isArray(ws.specialties) &&
+        ws.specialties.some((s) => s.toLowerCase().includes(filterSpecialty.toLowerCase())));
 
     return matchSearch && matchBrand && matchSpecialty;
   });
 
-  const handleAddReview = () => {
+  const handleAddReview = async () => {
     if (!selectedWorkshop) return;
     try {
-      const payload = {
-        workshopId: selectedWorkshop.id,
-        rating: Number(reviewRating),
-        serviceDone: reviewService,
-        comment: reviewComment,
-        costScore: Number(reviewCost),
-      };
-
-      workshopReviewSchema.parse(payload);
-
-      const newReview: WorkshopReviewItem = {
-        id: `wr-${Date.now()}`,
-        workshopId: selectedWorkshop.id,
-        userId: "u-current",
-        userName: "Alejandro Ríos",
-        userAvatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80",
-        rating: payload.rating,
-        serviceDone: payload.serviceDone,
-        comment: payload.comment,
-        costScore: payload.costScore,
-        verifiedVisit: true,
-        createdAt: new Date().toISOString(),
-      };
-
-      const updated = workshops.map((w) => {
-        if (w.id === selectedWorkshop.id) {
-          const currentReviews = w.reviews || [];
-          const newCount = w.reviewsCount + 1;
-          const newRating = (w.rating * w.reviewsCount + payload.rating) / newCount;
-          return {
-            ...w,
-            reviewsCount: newCount,
-            rating: Number(newRating.toFixed(1)),
-            reviews: [newReview, ...currentReviews],
-          };
-        }
-        return w;
+      const res = await fetch("/api/workshops", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workshopId: selectedWorkshop.id,
+          rating: Number(reviewRating),
+          serviceDone: reviewService,
+          comment: reviewComment,
+          costScore: Number(reviewCost),
+        }),
       });
 
-      setWorkshops(updated);
-      setSelectedWorkshop(updated.find((w) => w.id === selectedWorkshop.id) || null);
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error);
+
+      toast.success("¡Opinión registrada con éxito!");
       setReviewService("");
       setReviewComment("");
-      toast.success("¡Opinión sobre el taller registrada con éxito!");
+      fetchWorkshops();
+      setSelectedWorkshop(null);
     } catch (err: any) {
-      if (err.errors && err.errors[0]) {
-        toast.error(err.errors[0].message);
-      } else {
-        toast.error("Por favor completa los campos de la reseña.");
-      }
+      toast.error(err.message || "Error al calificar taller");
     }
   };
 
-  const handleCreateWorkshop = () => {
+  const handleCreateWorkshop = async () => {
     try {
-      const payload = {
-        name: newName,
-        address: newAddress,
-        city: newCity,
-        department: newDepartment,
-        latitude: 4.6097,
-        longitude: -74.0817,
-        phone: newPhone,
-        whatsapp: newWhatsapp,
-        specialties: newSpecialties.split(",").map((s) => s.trim()),
-        certifications: ["Taller Registrado VE Colombia"],
-        supportedBrands: newBrands.split(",").map((b) => b.trim()),
-        photos: ["https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?auto=format&fit=crop&w=800&q=80"],
-      };
+      const res = await fetch("/api/workshops", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newName,
+          address: newAddress,
+          city: newCity,
+          department: newDepartment,
+          latitude: 4.6097,
+          longitude: -74.0817,
+          phone: newPhone,
+          whatsapp: newWhatsapp,
+          specialties: newSpecialties.split(",").map((s) => s.trim()),
+          certifications: ["Taller Registrado VE Colombia"],
+          supportedBrands: newBrands.split(",").map((b) => b.trim()),
+          photos: ["https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?auto=format&fit=crop&w=800&q=80"],
+        }),
+      });
 
-      const validated = workshopSubmissionSchema.parse(payload);
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error);
 
-      const newWorkshopItem: WorkshopItem = {
-        id: `ws-${Date.now()}`,
-        name: validated.name,
-        address: validated.address,
-        city: validated.city,
-        department: validated.department,
-        latitude: validated.latitude,
-        longitude: validated.longitude,
-        phone: validated.phone,
-        whatsapp: validated.whatsapp,
-        specialties: validated.specialties,
-        certifications: validated.certifications,
-        supportedBrands: validated.supportedBrands,
-        photos: validated.photos,
-        rating: 5.0,
-        reviewsCount: 1,
-        isVerified: true,
-        moderation: "APPROVED",
-        createdAt: new Date().toISOString(),
-      };
-
-      setWorkshops([newWorkshopItem, ...workshops]);
+      toast.success("¡Taller registrado con éxito!");
       setIsNewWorkshopOpen(false);
       setNewName("");
       setNewAddress("");
-      toast.success("¡Taller especializado agregado al directorio!");
+      fetchWorkshops();
     } catch (err: any) {
-      if (err.errors && err.errors[0]) {
-        toast.error(err.errors[0].message);
-      } else {
-        toast.error("Por favor revisa los datos del formulario.");
-      }
+      toast.error(err.message || "Error al registrar taller");
     }
   };
 
@@ -187,7 +155,7 @@ export default function TalleresPage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-bold text-emerald-500 uppercase tracking-wider font-heading">
             <Wrench className="w-4 h-4" />
-            Red de Asistencia Técnica
+            Red Nacional de Asistencia Técnica EV
           </div>
           <h1 className="text-3xl font-black font-heading text-foreground mt-1">
             Talleres Especializados en Vehículos Eléctricos
@@ -240,9 +208,8 @@ export default function TalleresPage() {
             <option value="ALL">Todas las Especialidades Técnicas</option>
             <option value="Baterías">Baterías BMS & Celdas</option>
             <option value="Diagnóstico">Diagnóstico Scanner HV</option>
-            <option value="Inversores">Inversores & Módulos de Potencia</option>
-            <option value="Cargadores">Cargadores On-Board (OBC)</option>
-            <option value="Climatización">Bomba de Calor & Clima HV</option>
+            <option value="Inversores">Inversores & Módulos</option>
+            <option value="Cargadores">Cargadores On-Board</option>
           </Select>
         </div>
       </div>
@@ -258,7 +225,7 @@ export default function TalleresPage() {
                     <h3 className="text-base font-bold font-heading text-foreground">{ws.name}</h3>
                     {ws.isVerified && (
                       <Badge variant="default" className="text-[10px] shrink-0">
-                        <ShieldCheck className="w-3 h-3 mr-1" /> Verificado
+                        <ShieldCheck className="w-3 h-3 mr-1" /> Verificado Retie
                       </Badge>
                     )}
                   </div>
@@ -271,10 +238,10 @@ export default function TalleresPage() {
 
                 <div className="text-right shrink-0">
                   <span className="font-mono-spec font-bold text-amber-500 text-sm">
-                    ⭐ {ws.rating.toFixed(1)}
+                    ⭐ {ws.rating?.toFixed(1) || "5.0"}
                   </span>
                   <span className="text-[10px] text-muted-foreground block">
-                    ({ws.reviewsCount} reseñas)
+                    ({ws.reviewsCount || 0} opiniones)
                   </span>
                 </div>
               </div>
@@ -285,19 +252,20 @@ export default function TalleresPage() {
                   Especialidades Técnicas
                 </span>
                 <div className="flex flex-wrap gap-1.5">
-                  {ws.specialties.map((spec, i) => (
-                    <span
-                      key={i}
-                      className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-medium border border-emerald-500/20"
-                    >
-                      {spec}
-                    </span>
-                  ))}
+                  {Array.isArray(ws.specialties) &&
+                    ws.specialties.map((spec, i) => (
+                      <span
+                        key={i}
+                        className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-medium border border-emerald-500/20"
+                      >
+                        {spec}
+                      </span>
+                    ))}
                 </div>
               </div>
 
               {/* Certifications */}
-              {ws.certifications.length > 0 && (
+              {Array.isArray(ws.certifications) && ws.certifications.length > 0 && (
                 <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-muted-foreground space-y-1">
                   <div className="flex items-center gap-1 text-[10px] font-bold text-slate-700 dark:text-slate-300">
                     <Award className="w-3 h-3 text-amber-500" />
@@ -329,7 +297,7 @@ export default function TalleresPage() {
                 className="text-xs font-semibold"
                 onClick={() => setSelectedWorkshop(ws)}
               >
-                Ver Reseñas & Calificar
+                Calificar Taller
               </Button>
             </div>
           </Card>
@@ -344,7 +312,7 @@ export default function TalleresPage() {
               <Badge variant="default">Taller Especializado</Badge>
               {selectedWorkshop.isVerified && (
                 <Badge variant="default">
-                  <ShieldCheck className="w-3 h-3 mr-1" /> Certificado
+                  <ShieldCheck className="w-3 h-3 mr-1" /> Certificado Retie
                 </Badge>
               )}
             </div>
@@ -355,7 +323,6 @@ export default function TalleresPage() {
           </DialogHeader>
 
           <div className="space-y-6 max-h-[65vh] overflow-y-auto pr-1">
-            {/* New Review Form */}
             <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400 font-heading">
                 Dejar Calificación de Servicio Técnico
@@ -389,10 +356,10 @@ export default function TalleresPage() {
 
               <div>
                 <label className="text-xs font-semibold uppercase text-muted-foreground">
-                  Comentario sobre la Calidad y Costo
+                  Comentario
                 </label>
                 <Textarea
-                  placeholder="¿Cómo fue la atención, tiempo de entrega y conocimiento técnico?"
+                  placeholder="¿Cómo fue la atención y conocimiento técnico?"
                   value={reviewComment}
                   onChange={(e) => setReviewComment(e.target.value)}
                   rows={2}
@@ -401,37 +368,8 @@ export default function TalleresPage() {
               </div>
 
               <Button size="sm" variant="electric" onClick={handleAddReview} className="w-full font-semibold">
-                Publicar Opinión
+                Guardar Opinión
               </Button>
-            </div>
-
-            {/* Existing Reviews */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                Opiniones de Clientes ({selectedWorkshop.reviews?.length || 0})
-              </h4>
-
-              {selectedWorkshop.reviews && selectedWorkshop.reviews.length > 0 ? (
-                selectedWorkshop.reviews.map((rev) => (
-                  <div
-                    key={rev.id}
-                    className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-card space-y-1.5 text-xs"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-foreground">{rev.userName}</span>
-                      <span className="text-amber-500 font-mono-spec font-bold">
-                        {"⭐".repeat(rev.rating)}
-                      </span>
-                    </div>
-                    <p className="text-emerald-500 font-semibold">{rev.serviceDone}</p>
-                    <p className="text-muted-foreground leading-relaxed">{rev.comment}</p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-xs text-muted-foreground italic">
-                  Aún no hay reseñas registradas para este taller.
-                </p>
-              )}
             </div>
           </div>
         </Dialog>
@@ -440,118 +378,50 @@ export default function TalleresPage() {
       {/* New Workshop Modal */}
       <Dialog open={isNewWorkshopOpen} onOpenChange={setIsNewWorkshopOpen}>
         <DialogHeader onClose={() => setIsNewWorkshopOpen(false)}>
-          <DialogTitle>Registrar Taller Especializado en EV</DialogTitle>
-          <DialogDescription>
-            Suma tu taller o recomienda un centro de servicio técnico con experiencia en alta tensión.
-          </DialogDescription>
+          <DialogTitle>Registrar Taller Especializado</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div>
-            <label className="text-xs font-semibold uppercase text-muted-foreground">
-              Nombre del Taller
-            </label>
-            <Input
-              placeholder="Ej. ElectroDrive Colombia"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              className="mt-1"
-            />
+            <label className="text-xs font-semibold uppercase text-muted-foreground">Nombre del Taller</label>
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} className="mt-1" />
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="text-xs font-semibold uppercase text-muted-foreground">
-                Dirección
-              </label>
-              <Input
-                placeholder="Ej. Calle 128B # 58A-34"
-                value={newAddress}
-                onChange={(e) => setNewAddress(e.target.value)}
-                className="mt-1"
-              />
+              <label className="text-xs font-semibold uppercase text-muted-foreground">Dirección</label>
+              <Input value={newAddress} onChange={(e) => setNewAddress(e.target.value)} className="mt-1" />
             </div>
             <div>
-              <label className="text-xs font-semibold uppercase text-muted-foreground">
-                Ciudad
-              </label>
-              <Input
-                placeholder="Ej. Bogotá"
-                value={newCity}
-                onChange={(e) => setNewCity(e.target.value)}
-                className="mt-1"
-              />
+              <label className="text-xs font-semibold uppercase text-muted-foreground">Ciudad</label>
+              <Input value={newCity} onChange={(e) => setNewCity(e.target.value)} className="mt-1" />
             </div>
             <div>
-              <label className="text-xs font-semibold uppercase text-muted-foreground">
-                Departamento
-              </label>
-              <Input
-                placeholder="Ej. Cundinamarca"
-                value={newDepartment}
-                onChange={(e) => setNewDepartment(e.target.value)}
-                className="mt-1"
-              />
+              <label className="text-xs font-semibold uppercase text-muted-foreground">Departamento</label>
+              <Input value={newDepartment} onChange={(e) => setNewDepartment(e.target.value)} className="mt-1" />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold uppercase text-muted-foreground">
-                Teléfono Fijo / Móvil
-              </label>
-              <Input
-                value={newPhone}
-                onChange={(e) => setNewPhone(e.target.value)}
-                placeholder="+57 601 745 8920"
-                className="mt-1"
-              />
+              <label className="text-xs font-semibold uppercase text-muted-foreground">Teléfono</label>
+              <Input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="mt-1" />
             </div>
             <div>
-              <label className="text-xs font-semibold uppercase text-muted-foreground">
-                WhatsApp
-              </label>
-              <Input
-                value={newWhatsapp}
-                onChange={(e) => setNewWhatsapp(e.target.value)}
-                placeholder="+57 310 889 4521"
-                className="mt-1"
-              />
+              <label className="text-xs font-semibold uppercase text-muted-foreground">WhatsApp</label>
+              <Input value={newWhatsapp} onChange={(e) => setNewWhatsapp(e.target.value)} className="mt-1" />
             </div>
           </div>
 
           <div>
-            <label className="text-xs font-semibold uppercase text-muted-foreground">
-              Especialidades Técnicas (separadas por coma)
-            </label>
-            <Input
-              value={newSpecialties}
-              onChange={(e) => setNewSpecialties(e.target.value)}
-              placeholder="Ej. Diagnóstico HV, Reparación Baterías BMS, Inversores"
-              className="mt-1"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold uppercase text-muted-foreground">
-              Marcas Atendidas (separadas por coma)
-            </label>
-            <Input
-              value={newBrands}
-              onChange={(e) => setNewBrands(e.target.value)}
-              placeholder="Ej. BYD, Tesla, Renault, BMW, Todas"
-              className="mt-1"
-            />
+            <label className="text-xs font-semibold uppercase text-muted-foreground">Especialidades (separadas por coma)</label>
+            <Input value={newSpecialties} onChange={(e) => setNewSpecialties(e.target.value)} className="mt-1" />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setIsNewWorkshopOpen(false)}>
-            Cancelar
-          </Button>
-          <Button variant="electric" onClick={handleCreateWorkshop}>
-            Registrar Taller
-          </Button>
+          <Button variant="outline" onClick={() => setIsNewWorkshopOpen(false)}>Cancelar</Button>
+          <Button variant="electric" onClick={handleCreateWorkshop}>Registrar Taller</Button>
         </DialogFooter>
       </Dialog>
     </div>

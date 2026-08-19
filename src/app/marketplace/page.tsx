@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ShoppingBag,
   Car,
@@ -10,15 +10,10 @@ import {
   Layers,
   Search,
   PlusCircle,
-  Phone,
   MessageCircle,
-  ShieldCheck,
-  Tag,
   MapPin,
-  Clock,
-  Sparkles,
-  DollarSign,
   BatteryCharging,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -28,18 +23,18 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { INITIAL_MARKETPLACE, INITIAL_VEHICLES } from "@/lib/data/seed-data";
+import { ImageUploader } from "@/components/ui/image-uploader";
 import { MarketplaceListingItem, MarketplaceCategory, ItemCondition } from "@/types";
 import { formatCOP } from "@/lib/utils";
 import { toast } from "sonner";
-import { marketplaceListingSchema } from "@/lib/validations";
 
 export default function MarketplacePage() {
-  const [listings, setListings] = useState<MarketplaceListingItem[]>(INITIAL_MARKETPLACE);
+  const [listings, setListings] = useState<MarketplaceListingItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterCategory, setFilterCategory] = useState<MarketplaceCategory | "ALL">("ALL");
   const [filterCondition, setFilterCondition] = useState<ItemCondition | "ALL">("ALL");
   const [filterCity, setFilterCity] = useState("ALL");
+  const [loading, setLoading] = useState(true);
 
   // Selected Listing for Detail Modal
   const [selectedListing, setSelectedListing] = useState<MarketplaceListingItem | null>(null);
@@ -63,9 +58,26 @@ export default function MarketplacePage() {
   const [newMileage, setNewMileage] = useState("18000");
   const [newSoh, setNewSoh] = useState(99.0);
   const [newPlate, setNewPlate] = useState("EVK-***");
-  
-  // Specific charger fields
   const [newPowerKw, setNewPowerKw] = useState("7.4");
+
+  const fetchListings = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/marketplace");
+      const data = await res.json();
+      if (data.success) {
+        setListings(data.data);
+      }
+    } catch {
+      toast.error("Error conectando con el Marketplace");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchListings();
+  }, []);
 
   const filteredListings = listings.filter((item) => {
     const matchSearch =
@@ -90,7 +102,7 @@ export default function MarketplacePage() {
     { key: "ACCESSORIES_TIRES", label: "Accesorios & Llantas", icon: Layers },
   ];
 
-  const handleCreateListing = () => {
+  const handleCreateListing = async () => {
     try {
       const payload: any = {
         title: newTitle,
@@ -117,49 +129,23 @@ export default function MarketplacePage() {
         payload.chargingPowerKw = parseFloat(newPowerKw);
       }
 
-      const validated = marketplaceListingSchema.parse(payload);
+      const res = await fetch("/api/marketplace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-      const newListingItem: MarketplaceListingItem = {
-        id: `item-${Date.now()}`,
-        title: validated.title,
-        description: validated.description,
-        category: validated.category,
-        condition: validated.condition,
-        priceCop: validated.priceCop,
-        isNegotiable: validated.isNegotiable,
-        city: validated.city,
-        department: validated.department,
-        photos: validated.photos,
-        contactPhone: validated.contactPhone,
-        vehicleBrand: validated.vehicleBrand,
-        vehicleModel: validated.vehicleModel,
-        vehicleYear: validated.vehicleYear,
-        mileageKm: validated.mileageKm,
-        batteryHealthSoh: validated.batteryHealthSoh,
-        licensePlateMask: validated.licensePlateMask,
-        chargingPowerKw: validated.chargingPowerKw,
-        isSold: false,
-        featured: false,
-        viewsCount: 1,
-        moderation: "APPROVED",
-        userId: "user-demo-alejandro",
-        userName: "Alejandro Ríos",
-        userAvatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80",
-        createdAt: new Date().toISOString(),
-      };
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error);
 
-      setListings([newListingItem, ...listings]);
+      toast.success("¡Anuncio publicado exitosamente!");
       setIsNewListingOpen(false);
       setNewTitle("");
       setNewDescription("");
       setNewPrice("");
-      toast.success("¡Publicación creada y enviada a moderación exitosamente!");
+      fetchListings();
     } catch (err: any) {
-      if (err.errors && err.errors[0]) {
-        toast.error(err.errors[0].message);
-      } else {
-        toast.error("Por favor completa los campos requeridos.");
-      }
+      toast.error(err.message || "Error al publicar en Marketplace");
     }
   };
 
@@ -170,7 +156,7 @@ export default function MarketplacePage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-bold text-emerald-500 uppercase tracking-wider font-heading">
             <ShoppingBag className="w-4 h-4" />
-            Marketplace Comunitario EV
+            Marketplace Comunitario de Movilidad Eléctrica
           </div>
           <h1 className="text-3xl font-black font-heading text-foreground mt-1">
             Compra y Venta de Vehículos Eléctricos, Cargadores & Partes
@@ -190,7 +176,7 @@ export default function MarketplacePage() {
         </Button>
       </div>
 
-      {/* Category Navigation Pills */}
+      {/* Category Navigation */}
       <div className="flex flex-wrap items-center gap-2">
         {categories.map((cat) => {
           const Icon = cat.icon;
@@ -219,7 +205,7 @@ export default function MarketplacePage() {
           <div className="relative">
             <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <Input
-              placeholder="Buscar por marca, modelo, cargador o ciudad..."
+              placeholder="Buscar por marca, modelo o cargador..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
@@ -247,26 +233,7 @@ export default function MarketplacePage() {
             <option value="Cali">Cali / Valle</option>
             <option value="Pereira">Pereira / Eje Cafetero</option>
             <option value="Bucaramanga">Bucaramanga</option>
-            <option value="Barranquilla">Barranquilla</option>
           </Select>
-        </div>
-
-        <div className="flex items-center justify-between text-xs text-muted-foreground pt-1 border-t border-slate-100 dark:border-slate-800">
-          <span>Mostrando <strong>{filteredListings.length}</strong> artículos en venta</span>
-          {(searchQuery || filterCategory !== "ALL" || filterCondition !== "ALL" || filterCity !== "ALL") && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery("");
-                setFilterCategory("ALL");
-                setFilterCondition("ALL");
-                setFilterCity("ALL");
-              }}
-              className="text-emerald-500 font-semibold hover:underline"
-            >
-              Limpiar Filtros
-            </button>
-          )}
         </div>
       </div>
 
@@ -279,7 +246,6 @@ export default function MarketplacePage() {
           >
             <div>
               <div className="relative h-48 w-full bg-slate-900 overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={item.photos[0] || "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=800&q=80"}
                   alt={item.title}
@@ -308,11 +274,7 @@ export default function MarketplacePage() {
                     {item.city}
                   </span>
                   <span className="font-semibold text-slate-700 dark:text-slate-300">
-                    {item.condition === "NEW"
-                      ? "Nuevo"
-                      : item.condition === "LIKE_NEW"
-                      ? "Como nuevo"
-                      : "Usado"}
+                    {item.condition === "NEW" ? "Nuevo" : item.condition === "LIKE_NEW" ? "Como nuevo" : "Usado"}
                   </span>
                 </div>
 
@@ -324,7 +286,6 @@ export default function MarketplacePage() {
                 </CardDescription>
               </CardHeader>
 
-              {/* Specific EV Vehicle Metrics badge */}
               {item.category === "VEHICLE_COMPLETE" && item.batteryHealthSoh && (
                 <div className="px-5 py-2">
                   <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs font-mono-spec flex items-center justify-between">
@@ -336,24 +297,11 @@ export default function MarketplacePage() {
                   </div>
                 </div>
               )}
-
-              {/* Specific Charger kW badge */}
-              {item.chargingPowerKw && (
-                <div className="px-5 py-2">
-                  <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-xs font-mono-spec flex items-center justify-between">
-                    <span className="text-muted-foreground flex items-center gap-1">
-                      <Zap className="w-3.5 h-3.5 text-cyan-400" />
-                      Potencia de Carga:
-                    </span>
-                    <span className="font-bold text-cyan-400">{item.chargingPowerKw} kW</span>
-                  </div>
-                </div>
-              )}
             </div>
 
             <CardContent className="p-5 pt-0 mt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <span className="text-xs text-muted-foreground">
-                Por <strong>{item.userName}</strong>
+                Por <strong>{item.userName || "Propietario"}</strong>
               </span>
 
               <div className="flex items-center gap-2">
@@ -397,7 +345,6 @@ export default function MarketplacePage() {
 
           <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
             <div className="relative h-64 w-full rounded-xl overflow-hidden bg-slate-900">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={selectedListing.photos[0]}
                 alt={selectedListing.title}
@@ -430,50 +377,20 @@ export default function MarketplacePage() {
                 {selectedListing.description}
               </p>
             </div>
-
-            <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-900 text-xs space-y-1">
-              <span className="font-bold text-foreground block">Contacto del Vendedor:</span>
-              <p className="text-muted-foreground">Vendedor: {selectedListing.userName}</p>
-              <p className="text-muted-foreground font-mono-spec">Teléfono: {selectedListing.contactPhone}</p>
-            </div>
           </div>
-
-          <DialogFooter>
-            <a
-              href={`https://wa.me/${selectedListing.contactPhone.replace(/[^0-9]/g, "")}?text=Hola,%20me%20interesa%20tu%20publicacion:%20${encodeURIComponent(selectedListing.title)}`}
-              target="_blank"
-              rel="noreferrer"
-              className="w-full sm:w-auto"
-            >
-              <Button variant="electric" className="w-full font-semibold gap-1.5">
-                <MessageCircle className="w-4 h-4" />
-                Contactar por WhatsApp
-              </Button>
-            </a>
-          </DialogFooter>
         </Dialog>
       )}
 
       {/* New Listing Modal */}
       <Dialog open={isNewListingOpen} onOpenChange={setIsNewListingOpen}>
         <DialogHeader onClose={() => setIsNewListingOpen(false)}>
-          <DialogTitle>Publicar en el Marketplace EV</DialogTitle>
-          <DialogDescription>
-            Crea tu anuncio para vender tu vehículo eléctrico, cargador de pared o repuestos.
-          </DialogDescription>
+          <DialogTitle>Publicar Anuncio en el Marketplace</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div>
-            <label className="text-xs font-semibold uppercase text-muted-foreground">
-              Título del Anuncio
-            </label>
-            <Input
-              placeholder="Ej. BYD Yuan Plus GLX 2023 Único Dueño o Wallbox 7kW"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              className="mt-1"
-            />
+            <label className="text-xs font-semibold uppercase text-muted-foreground">Título del Anuncio</label>
+            <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} className="mt-1" />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -490,53 +407,31 @@ export default function MarketplacePage() {
             </Select>
 
             <Select
-              label="Condición del Artículo"
+              label="Condición"
               value={newCondition}
               onChange={(e) => setNewCondition(e.target.value as any)}
             >
               <option value="NEW">Nuevo / En Caja</option>
               <option value="LIKE_NEW">Como Nuevo / Poco Uso</option>
               <option value="USED_GOOD">Usado en Buen Estado</option>
-              <option value="FOR_PARTS">Para Repuestos</option>
             </Select>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="text-xs font-semibold uppercase text-muted-foreground">
-                Precio (COP)
-              </label>
-              <Input
-                type="number"
-                placeholder="Ej. 142000000"
-                value={newPrice}
-                onChange={(e) => setNewPrice(e.target.value)}
-                className="mt-1"
-              />
+              <label className="text-xs font-semibold uppercase text-muted-foreground">Precio (COP)</label>
+              <Input type="number" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} className="mt-1" />
             </div>
             <div>
-              <label className="text-xs font-semibold uppercase text-muted-foreground">
-                Ciudad
-              </label>
-              <Input
-                value={newCity}
-                onChange={(e) => setNewCity(e.target.value)}
-                className="mt-1"
-              />
+              <label className="text-xs font-semibold uppercase text-muted-foreground">Ciudad</label>
+              <Input value={newCity} onChange={(e) => setNewCity(e.target.value)} className="mt-1" />
             </div>
             <div>
-              <label className="text-xs font-semibold uppercase text-muted-foreground">
-                Departamento
-              </label>
-              <Input
-                value={newDepartment}
-                onChange={(e) => setNewDepartment(e.target.value)}
-                className="mt-1"
-              />
+              <label className="text-xs font-semibold uppercase text-muted-foreground">Departamento</label>
+              <Input value={newDepartment} onChange={(e) => setNewDepartment(e.target.value)} className="mt-1" />
             </div>
           </div>
 
-          {/* Conditional vehicle fields */}
           {newCategory === "VEHICLE_COMPLETE" && (
             <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
               <span className="text-xs font-bold text-emerald-400 block font-heading">
@@ -558,7 +453,7 @@ export default function MarketplacePage() {
               </div>
 
               <Slider
-                label="Salud de la Batería (SOH %)"
+                label="Salud Batería (SOH %)"
                 value={newSoh}
                 min={70}
                 max={100}
@@ -570,50 +465,26 @@ export default function MarketplacePage() {
           )}
 
           <div>
-            <label className="text-xs font-semibold uppercase text-muted-foreground">
-              Descripción Completa
-            </label>
-            <Textarea
-              placeholder="Describe el estado, garantía, accesorios incluidos y motivo de venta..."
-              value={newDescription}
-              onChange={(e) => setNewDescription(e.target.value)}
-              rows={3}
-              className="mt-1"
-            />
+            <label className="text-xs font-semibold uppercase text-muted-foreground">Descripción</label>
+            <Textarea value={newDescription} onChange={(e) => setNewDescription(e.target.value)} rows={3} className="mt-1" />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold uppercase text-muted-foreground">
-                Teléfono / WhatsApp
-              </label>
-              <Input
-                value={newPhone}
-                onChange={(e) => setNewPhone(e.target.value)}
-                placeholder="+57 312 456 7890"
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold uppercase text-muted-foreground">
-                URL de Fotografía (Cloudinary)
-              </label>
-              <Input
-                value={newPhotoUrl}
-                onChange={(e) => setNewPhotoUrl(e.target.value)}
-                className="mt-1"
-              />
-            </div>
+          <ImageUploader
+            value={newPhotoUrl}
+            onChange={setNewPhotoUrl}
+            folder="vecolombia/marketplace"
+            label="Fotografía Real del Vehículo / Artículo"
+          />
+
+          <div>
+            <label className="text-xs font-semibold uppercase text-muted-foreground">Teléfono / WhatsApp</label>
+            <Input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="mt-1" />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setIsNewListingOpen(false)}>
-            Cancelar
-          </Button>
-          <Button variant="electric" onClick={handleCreateListing}>
-            Publicar Anuncio
-          </Button>
+          <Button variant="outline" onClick={() => setIsNewListingOpen(false)}>Cancelar</Button>
+          <Button variant="electric" onClick={handleCreateListing}>Publicar Anuncio</Button>
         </DialogFooter>
       </Dialog>
     </div>

@@ -6,9 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
 }
 
 enum Role {
@@ -80,10 +78,15 @@ model User {
   email         String         @unique
   emailVerified DateTime?
   image         String?
+  password      String?        // Hashed password para acceso administrativo directo
   phone         String?
   role          Role           @default(USER)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+
+  // NextAuth
+  accounts      Account[]
+  sessions      Session[]
 
   // Relations
   vehicles            UserVehicle[]
@@ -98,11 +101,48 @@ model User {
   moderationLogs      ModerationLog[]
 }
 
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
 model Vehicle {
   id               String          @id @default(cuid())
   brand            String          // e.g. BYD, Tesla, Renault, BMW, Volvo, Kia, Hyundai
-  model            String          // e.g. Dolphin, Model 3, Kwid E-Tech, EX30, EV6
-  year             Int             // e.g. 2024
+  model            String          // e.g. Dolphin, Model 3, Kwid E-Tech, EX30, EV6 (Línea)
+  year             Int             // e.g. 2024 (Año base / lanzamiento)
+  yearStart        Int?            // e.g. 2022
+  yearEnd          Int?            // e.g. 2026 (o null si sigue en producción)
   batteryKwh       Float           // e.g. 44.9, 60.0
   realRangeKm      Int             // e.g. 300
   wltpRangeKm      Int?            // e.g. 340
@@ -122,6 +162,7 @@ model UserVehicle {
   id            String    @id @default(cuid())
   userId        String
   vehicleId     String
+  modelYear     Int?      // Año específico del modelo del usuario (e.g. 2023)
   nickname      String?
   licensePlate  String?   // Masked in UI for privacy
   batteryHealth Float?    // SOH % e.g. 98.5
@@ -184,19 +225,31 @@ model ChargingReview {
 
 model Route {
   id                String           @id @default(cuid())
-  title             String           // e.g. "Bogotá a Medellín vía Villeta - Dorada"
+  title             String           // e.g. "Bogotá (Calle 100) a Tunja en BYD Dolphin"
   description       String
   originCity        String           // e.g. "Bogotá, D.C."
-  destinationCity   String           // e.g. "Medellín, Antioquia"
+  destinationCity   String           // e.g. "Tunja, Boyacá"
+  originAddress     String?          // e.g. "Calle 100 #15-20, Bogotá"
+  destinationAddress String?         // e.g. "Plaza de Bolívar, Tunja"
   originCoords      Json             // { lat: 4.6097, lng: -74.0817 }
-  destinationCoords Json             // { lat: 6.2442, lng: -75.5812 }
-  distanceKm        Float            // e.g. 415.0
-  durationMinutes   Int              // e.g. 480
-  elevationGainM    Int?             // e.g. 3400 (Ascenso acumulado)
-  waypoints         Json?            // Coordinates line or geojson
-  chargingStops     Json             // Suggested or used charging stations in route
+  destinationCoords Json             // { lat: 5.5353, lng: -73.3678 }
+  distanceKm        Float            // e.g. 138.5
+  durationMinutes   Int              // e.g. 150
+  elevationGainM    Int?             // e.g. 1250 (Ascenso acumulado)
+  startSoc          Float?           // e.g. 95.0 (% de batería inicial)
+  endSoc            Float?           // e.g. 42.0 (% de batería al llegar)
+  drivingMode       String?          // "ECO", "NORMAL", "SPORT"
+  climateActive     Boolean?         @default(true) // Aire acondicionado o calefacción
+  passengersCount   Int?             @default(2)
+  avgSpeedKmh       Float?           // e.g. 68.5 km/h
+  actualKwhUsed     Float?           // e.g. 22.8 kWh reales consumidos
+  realEfficiency    Float?           // e.g. 16.4 kWh / 100km
+  chargingTelemetry Json?            // Paradas de carga: [{ stationName, startSoc, endSoc, kwhCharged, powerKw, costCop, durationMinutes }]
+  waypoints         Json?            // Coordenadas polyline geojson
+  elevationProfile  Json?            // Perfil altimétrico 3D
+  chargingStops     Json             // Estaciones usadas
   vehicleUsedId     String?
-  avgConsumption    Float?           // kWh / 100km
+  avgConsumption    Float?           // kWh / 100km promedio comunidad
   difficulty        String           @default("MODERATE") // "EASY", "MODERATE", "CHALLENGING"
   roadStatus        String?          // "Excelente", "Obras en La Vega", "Doble Calzada"
   photos            String[]
@@ -297,12 +350,9 @@ model Manual {
   @@index([brand, category])
 }
 
-// ==============================================================================
-// MARKETPLACE EV - COMPRA Y VENTA DE VEHÍCULOS, CARGADORES, PARTES Y ACCESORIOS
-// ==============================================================================
 model MarketplaceListing {
   id               String              @id @default(cuid())
-  title            String              // e.g. "BYD Yuan Plus GLX 2023 - Único dueño" o "Wallbox Pulsar Plus 7.4kW Type 2"
+  title            String              // e.g. "BYD Yuan Plus GLX 2023 - Único dueño"
   description      String
   category         MarketplaceCategory
   condition        ItemCondition       @default(USED_GOOD)

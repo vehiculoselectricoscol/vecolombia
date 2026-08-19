@@ -81,10 +81,12 @@ export type StationSubmissionInput = z.infer<typeof stationSubmissionSchema>;
 
 // 2. Route Submission Validation
 export const routeSubmissionSchema = z.object({
-  title: z.string().trim().min(5, "El título debe tener al menos 5 caracteres").max(120),
-  description: z.string().trim().min(10, "Describe brevemente la ruta, estado del asfalto o recomendaciones"),
+  title: z.string().trim().min(3, "El título debe tener al menos 3 caracteres").max(120),
+  description: z.string().trim().min(5, "Describe brevemente la ruta o recomendaciones"),
   originCity: z.string().trim().min(2, "Ciudad de origen requerida"),
   destinationCity: z.string().trim().min(2, "Ciudad de destino requerida"),
+  originAddress: z.string().optional(),
+  destinationAddress: z.string().optional(),
   originCoords: z.object({
     lat: z.number(),
     lng: z.number(),
@@ -96,12 +98,23 @@ export const routeSubmissionSchema = z.object({
   distanceKm: z.number().positive("Distancia debe ser positiva"),
   durationMinutes: z.number().int().positive("Duración estimada requerida"),
   elevationGainM: z.number().int().optional(),
+  startSoc: z.number().min(1).max(100).optional(),
+  endSoc: z.number().min(0).max(100).optional(),
+  drivingMode: z.string().optional(),
+  climateActive: z.boolean().optional(),
+  passengersCount: z.number().int().optional(),
+  avgSpeedKmh: z.number().optional(),
+  actualKwhUsed: z.number().optional(),
+  realEfficiency: z.number().optional(),
+  chargingTelemetry: z.array(z.any()).optional(),
+  waypoints: z.any().optional(),
+  elevationProfile: z.array(z.any()).optional(),
   vehicleUsedId: z.string().optional(),
   avgConsumption: z.number().positive().optional(),
   difficulty: z.enum(["EASY", "MODERATE", "CHALLENGING"]).default("MODERATE"),
   roadStatus: z.string().max(100).optional(),
   chargingStops: z.array(z.any()).default([]),
-  photos: z.array(z.string().url()).default([]),
+  photos: z.array(z.string()).default([]),
 });
 
 export type RouteSubmissionInput = z.infer<typeof routeSubmissionSchema>;
@@ -184,12 +197,32 @@ export const userProfileSchema = z.object({
 });
 
 export const userVehicleSchema = z.object({
-  vehicleId: z.string().min(1, "Selecciona un vehículo del catálogo"),
+  vehicleId: z.string().min(1, "Selecciona una marca y línea del catálogo"),
+  modelYear: z.number().int().min(2010).max(2030).optional(),
   nickname: z.string().max(50).optional(),
   licensePlate: z.string().max(8).optional(),
   batteryHealth: z.number().min(50).max(100).optional(),
   isPrimary: z.boolean().default(true),
 });
+
+export const catalogVehicleSchema = z.object({
+  brand: z.string().trim().min(2, "Marca requerida (ej. BYD, Tesla, Zeekr)"),
+  model: z.string().trim().min(2, "Línea / Modelo requerido (ej. Dolphin, Seal, 001)"),
+  year: z.number().int().min(2010).max(2030).default(2024),
+  yearStart: z.number().int().min(2010).max(2030).optional(),
+  yearEnd: z.number().int().min(2010).max(2030).optional(),
+  batteryKwh: z.number().positive("Capacidad de batería en kWh requerida"),
+  realRangeKm: z.number().int().positive("Autonomía real requerida"),
+  wltpRangeKm: z.number().int().positive().optional(),
+  connectorTypes: z.array(ConnectorTypeEnum).min(1, "Selecciona al menos 1 tipo de conector"),
+  maxAcKw: z.number().positive("Potencia máxima AC requerida"),
+  maxDcKw: z.number().positive("Potencia máxima DC requerida"),
+  imageUrl: z.string().url("URL de imagen requerida").optional().or(z.literal("")),
+  efficiencyKwh100: z.number().positive().optional(),
+  description: z.string().optional(),
+});
+
+export type CatalogVehicleInput = z.infer<typeof catalogVehicleSchema>;
 
 // 9. Marketplace Listing Validation
 export const marketplaceListingSchema = z.object({

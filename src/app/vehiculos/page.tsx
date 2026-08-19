@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Car,
   Zap,
@@ -8,9 +8,9 @@ import {
   Gauge,
   Search,
   Sliders,
-  CheckCircle2,
   Clock,
   Sparkles,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -19,45 +19,70 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { ConnectorBadge } from "@/components/connector-badge";
-import { INITIAL_VEHICLES } from "@/lib/data/seed-data";
 import { VehicleItem, ConnectorType } from "@/types";
 import { estimateChargingMinutes } from "@/lib/utils";
+import { toast } from "sonner";
 
 export default function VehiculosPage() {
-  const [vehicles, setVehicles] = useState<VehicleItem[]>(INITIAL_VEHICLES);
+  const [vehicles, setVehicles] = useState<VehicleItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterBrand, setFilterBrand] = useState("ALL");
   const [filterConnector, setFilterConnector] = useState<ConnectorType | "ALL">("ALL");
+  const [loading, setLoading] = useState(true);
 
   // Selected Vehicle for Live Charging Calculator
-  const [calcVehicleId, setCalcVehicleId] = useState(INITIAL_VEHICLES[1].id);
+  const [calcVehicleId, setCalcVehicleId] = useState<string>("");
   const [calcFromSoc, setCalcFromSoc] = useState(20);
   const [calcToSoc, setCalcToSoc] = useState(80);
   const [calcChargerKw, setCalcChargerKw] = useState(60);
 
+  const fetchVehicles = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/vehicles");
+      const data = await res.json();
+      if (data.success && data.data) {
+        setVehicles(data.data);
+        if (data.data.length > 0 && !calcVehicleId) {
+          setCalcVehicleId(data.data[0].id);
+        }
+      }
+    } catch {
+      toast.error("Error conectando con el catálogo de vehículos");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchVehicles();
+  }, []);
+
   const calcVehicle = vehicles.find((v) => v.id === calcVehicleId) || vehicles[0];
 
-  const estimatedMinutes = estimateChargingMinutes({
-    batteryKwh: calcVehicle.batteryKwh,
-    fromSoc: calcFromSoc,
-    toSoc: calcToSoc,
-    chargerKw: calcChargerKw,
-    maxCarKw: calcVehicle.maxDcKw,
-  });
+  const estimatedMinutes = calcVehicle
+    ? estimateChargingMinutes({
+        batteryKwh: calcVehicle.batteryKwh,
+        fromSoc: calcFromSoc,
+        toSoc: calcToSoc,
+        chargerKw: calcChargerKw,
+        maxCarKw: calcVehicle.maxDcKw,
+      })
+    : 35;
 
   const filteredVehicles = vehicles.filter((v) => {
     const matchSearch =
       v.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
       v.model.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchBrand = filterBrand === "ALL" || v.brand === filterBrand;
+    const matchBrand = filterBrand === "ALL" || v.brand.toLowerCase() === filterBrand.toLowerCase();
     const matchConnector =
-      filterConnector === "ALL" || v.connectorTypes.includes(filterConnector);
+      filterConnector === "ALL" || (v.connectorTypes && v.connectorTypes.includes(filterConnector));
 
     return matchSearch && matchBrand && matchConnector;
   });
 
-  const brands = Array.from(new Set(vehicles.map((v) => v.brand)));
+  const brands = Array.from(new Set(vehicles.map((v) => v.brand))).sort();
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -66,107 +91,102 @@ export default function VehiculosPage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-bold text-emerald-500 uppercase tracking-wider font-heading">
             <Car className="w-4 h-4" />
-            Base de Datos Oficial
+            Catálogo Nacional de Movilidad Eléctrica
           </div>
           <h1 className="text-3xl font-black font-heading text-foreground mt-1">
-            Catálogo de Vehículos Eléctricos en Colombia
+            Fichas Técnicas & Calculadora de Carga EV
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Especificaciones técnicas reales, compatibilidad de conectores (CCS2, GB/T, Type 2), curvas de carga y potencias máximas.
+            Compara especificaciones técnicas de batería, potencia de carga AC/DC y conectores disponibles en Colombia.
           </p>
         </div>
       </div>
 
-      {/* Interactive Charging Speed Calculator */}
-      <Card className="p-6 bg-gradient-to-r from-emerald-950/20 via-slate-900/40 to-cyan-950/20 border-emerald-500/30">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          <div className="lg:col-span-6 space-y-4">
-            <div className="inline-flex items-center gap-2 text-xs font-bold text-emerald-400 uppercase tracking-wider font-heading">
-              <Sparkles className="w-3.5 h-3.5" />
-              Simulador de Tiempo de Carga
+      {/* Live Charging Simulator Card */}
+      {calcVehicle && (
+        <Card className="p-6 border-emerald-500/30 bg-gradient-to-r from-emerald-500/5 via-cyan-500/5 to-transparent">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4 mb-4">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-emerald-500" />
+              <h2 className="text-lg font-bold font-heading text-foreground">
+                Simulador Dinámico de Tiempo de Carga
+              </h2>
             </div>
-            <h3 className="text-xl font-bold font-heading text-white">
-              ¿Cuánto tarda en cargar tu carro eléctrico?
-            </h3>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              El tiempo real depende del tamaño de la batería, el porcentaje deseado y la potencia soportada por el vehículo y la electrolinera.
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-              <Select
-                label="Modelo de Vehículo"
-                value={calcVehicleId}
-                onChange={(e) => setCalcVehicleId(e.target.value)}
-              >
-                {vehicles.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.brand} {v.model} ({v.batteryKwh} kWh)
-                  </option>
-                ))}
-              </Select>
-
-              <Select
-                label="Potencia del Cargador"
-                value={calcChargerKw}
-                onChange={(e) => setCalcChargerKw(Number(e.target.value))}
-              >
-                <option value="7">Wallbox Domiciliario (7.4 kW AC)</option>
-                <option value="11">Wallbox Trifásico (11 kW AC)</option>
-                <option value="22">Cargador Público Medio (22 kW AC)</option>
-                <option value="50">Carga Rápida DC (50 kW)</option>
-                <option value="60">Carga Rápida DC (60 kW)</option>
-                <option value="100">Carga Ultra Rápida DC (100 kW)</option>
-                <option value="150">Hub Alta Potencia (150 kW DC)</option>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 pt-1">
-              <Slider
-                label="SoC Inicial"
-                value={calcFromSoc}
-                min={5}
-                max={90}
-                step={5}
-                onChange={setCalcFromSoc}
-                valueDisplay={`${calcFromSoc}%`}
-              />
-              <Slider
-                label="SoC Objetivo"
-                value={calcToSoc}
-                min={calcFromSoc + 5}
-                max={100}
-                step={5}
-                onChange={setCalcToSoc}
-                valueDisplay={`${calcToSoc}%`}
-              />
-            </div>
+            <Badge variant="default" className="text-xs">
+              {calcVehicle.brand} {calcVehicle.model} ({calcVehicle.batteryKwh} kWh)
+            </Badge>
           </div>
 
-          <div className="lg:col-span-6 flex flex-col items-center justify-center p-6 rounded-2xl bg-slate-950/80 border border-slate-800 text-center space-y-3">
-            <Clock className="w-8 h-8 text-emerald-400" />
-            <div className="space-y-1">
-              <p className="text-xs text-slate-400">Tiempo Estimado ({calcFromSoc}% a {calcToSoc}%)</p>
-              <p className="text-4xl font-black font-mono-spec text-emerald-400">
-                {Math.floor(estimatedMinutes / 60)}h {estimatedMinutes % 60}m
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+            <div className="lg:col-span-8 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Select
+                  label="Vehículo del Catálogo"
+                  value={calcVehicleId}
+                  onChange={(e) => setCalcVehicleId(e.target.value)}
+                >
+                  {vehicles.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.brand} {v.model} ({v.batteryKwh} kWh)
+                    </option>
+                  ))}
+                </Select>
+
+                <Select
+                  label="Potencia del Cargador"
+                  value={calcChargerKw}
+                  onChange={(e) => setCalcChargerKw(Number(e.target.value))}
+                >
+                  <option value="3.7">Cargador Lento Portátil 110V/220V (3.7 kW AC)</option>
+                  <option value="7.4">Wallbox Residencial Monofásico (7.4 kW AC)</option>
+                  <option value="11.0">Wallbox Bifásico / Trifásico (11.0 kW AC)</option>
+                  <option value="22.0">Cargador Público Urbano (22.0 kW AC)</option>
+                  <option value="50.0">Electrolinera Rápida DC (50.0 kW DC)</option>
+                  <option value="60.0">Electrolinera DC (60.0 kW DC)</option>
+                  <option value="120.0">Electrolinera Ultra-Rápida (120.0 kW DC)</option>
+                  <option value="150.0">Electrolinera Alta Potencia (150.0 kW DC)</option>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Slider
+                  label="Batería Actual (% SoC Inicial)"
+                  value={calcFromSoc}
+                  min={5}
+                  max={calcToSoc - 5}
+                  step={5}
+                  onChange={setCalcFromSoc}
+                  valueDisplay={`${calcFromSoc}%`}
+                />
+                <Slider
+                  label="Batería Objetivo (% SoC Deseado)"
+                  value={calcToSoc}
+                  min={calcFromSoc + 5}
+                  max={100}
+                  step={5}
+                  onChange={setCalcToSoc}
+                  valueDisplay={`${calcToSoc}%`}
+                />
+              </div>
+            </div>
+
+            <div className="lg:col-span-4 p-5 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-2">
+              <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                <Clock className="w-4 h-4 text-emerald-400" />
+                Tiempo de Carga Estimado
+              </div>
+              <p className="text-3xl font-black font-mono-spec text-emerald-400">
+                {estimatedMinutes >= 60
+                  ? `${Math.floor(estimatedMinutes / 60)}h ${estimatedMinutes % 60}m`
+                  : `${estimatedMinutes} minutos`}
+              </p>
+              <p className="text-[11px] text-slate-400">
+                De {calcFromSoc}% a {calcToSoc}% • Energía: +{((calcVehicle.batteryKwh * (calcToSoc - calcFromSoc)) / 100).toFixed(1)} kWh
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-4 text-xs font-mono-spec text-slate-400 border-t border-slate-800/80 pt-3 w-full max-w-xs">
-              <div>
-                <span>Energía Requerida:</span>
-                <p className="font-bold text-white">
-                  {(((calcToSoc - calcFromSoc) * calcVehicle.batteryKwh) / 100).toFixed(1)} kWh
-                </p>
-              </div>
-              <div>
-                <span>Potencia Efectiva:</span>
-                <p className="font-bold text-cyan-400">
-                  {Math.min(calcChargerKw, calcVehicle.maxDcKw)} kW
-                </p>
-              </div>
-            </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      )}
 
       {/* Filter Bar */}
       <div className="p-4 rounded-2xl bg-card border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
@@ -197,13 +217,11 @@ export default function VehiculosPage() {
             value={filterConnector}
             onChange={(e) => setFilterConnector(e.target.value as any)}
           >
-            <option value="ALL">Cualquier Conector</option>
+            <option value="ALL">Todos los Conectores</option>
             <option value="CCS2">Combo 2 (CCS2)</option>
-            <option value="GB_T_DC">GB/T (DC)</option>
-            <option value="TYPE_2_MENNEKES">Tipo 2 (Mennekes AC)</option>
-            <option value="TYPE_1_J1772">Tipo 1 (J1772 AC)</option>
-            <option value="CCS1">Combo 1 (CCS1 DC)</option>
-            <option value="TESLA_NACS">Tesla / NACS</option>
+            <option value="GB_T_DC">GB/T DC (China / BYD)</option>
+            <option value="TYPE_2_MENNEKES">Tipo 2 (AC)</option>
+            <option value="TESLA_NACS">Tesla NACS</option>
           </Select>
         </div>
       </div>
@@ -211,72 +229,82 @@ export default function VehiculosPage() {
       {/* Vehicles Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredVehicles.map((veh) => (
-          <Card key={veh.id} className="overflow-hidden hover:border-emerald-500/50 transition-all flex flex-col justify-between">
+          <Card
+            key={veh.id}
+            className="overflow-hidden hover:border-emerald-500/50 transition-all flex flex-col justify-between group"
+          >
             <div>
               <div className="relative h-48 w-full bg-slate-900 overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={veh.imageUrl || "https://images.unsplash.com/photo-1593941707882-a5bba14938c7?auto=format&fit=crop&w=800&q=80"}
+                  src={veh.imageUrl || "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=800&q=80"}
                   alt={`${veh.brand} ${veh.model}`}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 />
                 <div className="absolute top-3 left-3">
                   <Badge variant="default" className="bg-slate-950/80 backdrop-blur-md">
                     {veh.brand}
                   </Badge>
                 </div>
-                <div className="absolute bottom-3 right-3 bg-slate-900/90 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-mono-spec font-bold text-emerald-400 border border-slate-700">
-                  {veh.batteryKwh} kWh
+                <div className="absolute bottom-3 right-3 bg-slate-950/90 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-mono-spec font-bold text-emerald-400 border border-slate-800">
+                  {veh.realRangeKm} km reales
                 </div>
               </div>
 
               <CardHeader className="p-5 pb-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground font-mono-spec">Año {veh.year}</span>
-                  <span className="text-xs font-bold text-cyan-400 font-mono-spec">
-                    Real ~{veh.realRangeKm} km
-                  </span>
-                </div>
-                <CardTitle className="text-lg font-bold font-heading text-foreground mt-1">
+                <CardTitle className="text-base font-bold font-heading text-foreground">
                   {veh.brand} {veh.model}
                 </CardTitle>
-                <CardDescription className="text-xs line-clamp-2">
-                  {veh.description}
+                <CardDescription className="text-xs line-clamp-2 mt-1">
+                  {veh.description || "Vehículo 100% Eléctrico"}
                 </CardDescription>
               </CardHeader>
 
-              <CardContent className="p-5 pt-0 space-y-3">
-                <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-slate-100 dark:bg-slate-900 text-xs font-mono-spec">
+              <div className="px-5 py-2">
+                <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-mono-spec text-center">
                   <div>
-                    <span className="text-muted-foreground block text-[10px]">Carga Rápida DC</span>
-                    <span className="font-bold text-emerald-500">{veh.maxDcKw} kW</span>
+                    <span className="text-slate-400 block text-[10px]">Batería</span>
+                    <span className="font-bold text-white">{veh.batteryKwh} kWh</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground block text-[10px]">Carga Lenta AC</span>
-                    <span className="font-bold text-blue-400">{veh.maxAcKw} kW</span>
+                    <span className="text-slate-400 block text-[10px]">Carga AC</span>
+                    <span className="font-bold text-white">{veh.maxAcKw} kW</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground block text-[10px]">Consumo Medio</span>
-                    <span className="font-bold text-foreground">{veh.efficiencyKwh100 || 15} kWh/100km</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block text-[10px]">Rango WLTP</span>
-                    <span className="font-bold text-foreground">{veh.wltpRangeKm || veh.realRangeKm} km</span>
+                    <span className="text-slate-400 block text-[10px]">Carga DC</span>
+                    <span className="font-bold text-cyan-400">{veh.maxDcKw} kW</span>
                   </div>
                 </div>
+              </div>
 
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
-                    Conectores Soportados:
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {veh.connectorTypes.map((c, i) => (
-                      <ConnectorBadge key={i} type={c} />
-                    ))}
-                  </div>
+              <div className="px-5 py-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
+                  Conectores Soportados:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {veh.connectorTypes?.map((c: any, i: number) => (
+                    <ConnectorBadge key={i} type={c} />
+                  ))}
                 </div>
-              </CardContent>
+              </div>
             </div>
+
+            <CardContent className="p-5 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">
+                Eficiencia: <strong>{veh.efficiencyKwh100 || 15.0} kWh/100km</strong>
+              </span>
+
+              <Button
+                size="sm"
+                variant="electric"
+                className="text-xs font-semibold"
+                onClick={() => {
+                  setCalcVehicleId(veh.id);
+                  window.scrollTo({ top: 120, behavior: "smooth" });
+                }}
+              >
+                Simular Carga
+              </Button>
+            </CardContent>
           </Card>
         ))}
       </div>

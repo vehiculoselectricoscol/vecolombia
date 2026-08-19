@@ -47,6 +47,7 @@ export interface UserVehicleItem {
   id: string;
   userId: string;
   vehicleId: string;
+  modelYear?: number;
   nickname?: string;
   licensePlate?: string;
   batteryHealth?: number; // e.g. 98.5%
@@ -59,6 +60,8 @@ export interface VehicleItem {
   brand: string;
   model: string;
   year: number;
+  yearStart?: number;
+  yearEnd?: number;
   batteryKwh: number;
   realRangeKm: number;
   wltpRangeKm?: number;
@@ -136,30 +139,67 @@ export interface ElevationPoint {
   batterySocPercent?: number;
 }
 
+export interface ChargingTelemetryStop {
+  stationName: string;
+  startSoc: number;
+  endSoc: number;
+  kwhCharged: number;
+  powerKw?: number;
+  costCop?: number;
+  durationMinutes?: number;
+  connectorType?: ConnectorType;
+}
+
 export interface RouteItem {
   id: string;
   title: string;
   description: string;
   originCity: string;
   destinationCity: string;
+  originAddress?: string;
+  destinationAddress?: string;
   originCoords: { lat: number; lng: number };
   destinationCoords: { lat: number; lng: number };
   distanceKm: number;
   durationMinutes: number;
   elevationGainM?: number;
+  startSoc?: number;
+  endSoc?: number;
+  drivingMode?: "ECO" | "NORMAL" | "SPORT" | string;
+  climateActive?: boolean;
+  passengersCount?: number;
+  avgSpeedKmh?: number;
+  actualKwhUsed?: number;
+  realEfficiency?: number;
+  chargingTelemetry?: ChargingTelemetryStop[];
   waypoints?: RouteWaypoint[];
   elevationProfile?: ElevationPoint[];
   chargingStops: ChargingStationItem[];
   vehicleUsedId?: string;
   vehicleUsedName?: string;
+  vehicleUsedBrand?: string;
+  vehicleUsedModel?: string;
+  vehicleUsedBatteryKwh?: number;
+  vehicleUsed?: {
+    id: string;
+    brand: string;
+    model: string;
+    batteryKwh: number;
+    realRangeKm: number;
+    imageUrl?: string;
+  };
   avgConsumption?: number;
   difficulty: "EASY" | "MODERATE" | "CHALLENGING";
   roadStatus?: string;
   photos: string[];
   moderation: ModerationStatus;
   createdById: string;
-  createdByName: string;
+  createdByName?: string;
   createdByAvatar?: string;
+  createdBy?: {
+    name: string | null;
+    image: string | null;
+  };
   createdAt: string;
   comments?: RouteCommentItem[];
 }
