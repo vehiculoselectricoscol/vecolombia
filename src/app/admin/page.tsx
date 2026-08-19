@@ -17,6 +17,7 @@ import {
   Globe,
   Search,
   DownloadCloud,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -89,6 +90,25 @@ export default function AdminDashboardPage() {
   const [apiSearchBrand, setApiSearchBrand] = useState("BYD");
   const [apiResults, setApiResults] = useState<any[]>([]);
   const [apiSearching, setApiSearching] = useState(false);
+  const [isSyncingStations, setIsSyncingStations] = useState(false);
+
+  const handleSyncStations = async () => {
+    setIsSyncingStations(true);
+    try {
+      const res = await fetch("/api/stations/sync", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(data.message || "Estaciones de carga sincronizadas con éxito");
+        fetchDashboardData();
+      } else {
+        toast.error(data.error || "Error al sincronizar");
+      }
+    } catch {
+      toast.error("Error conectando con el servicio de sincronización");
+    } finally {
+      setIsSyncingStations(false);
+    }
+  };
 
   const fetchDashboardData = async () => {
     setLoading(true);
@@ -370,6 +390,17 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="flex items-center gap-2.5">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSyncStations}
+            disabled={isSyncingStations}
+            className="gap-1.5 text-xs font-semibold text-emerald-500 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+          >
+            <Zap className={`w-3.5 h-3.5 text-emerald-500 ${isSyncingStations ? "animate-spin" : ""}`} />
+            {isSyncingStations ? "Sincronizando..." : "Sincronizar Electrolineras Colombia"}
+          </Button>
+
           <Button
             variant="outline"
             size="sm"

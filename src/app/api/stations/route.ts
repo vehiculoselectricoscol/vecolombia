@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { stationSubmissionSchema, chargingReviewSchema } from "@/lib/validations";
+import { getAuthenticatedUser } from "@/lib/auth-helper";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
@@ -27,7 +30,7 @@ export async function GET(req: NextRequest) {
         reviews: {
           include: {
             user: {
-              select: { name: true, image: true },
+              select: { id: true, name: true, image: true, email: true },
             },
           },
           orderBy: { createdAt: "desc" },
@@ -58,26 +61,38 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    const user = await getAuthenticatedUser(req);
 
     // Check if it's a review check-in or a new station submission
     if (body.stationId && body.rating) {
       const validatedReview = chargingReviewSchema.parse(body);
-      const user = await prisma.user.findFirst();
+
+      // Ensure we have a valid user id (either authenticated or fallback)
+      let authorId = user?.id;
+      if (!authorId) {
+        const firstUser = await prisma.user.findFirst();
+        authorId = firstUser?.id || "user-anon";
+      }
 
       const newReview = await prisma.chargingReview.create({
         data: {
           stationId: validatedReview.stationId,
-          userId: user?.id || "user-anon",
+          userId: authorId,
           rating: validatedReview.rating,
           comment: validatedReview.comment,
           connectorUsed: validatedReview.connectorUsed,
           powerDeliveredKw: validatedReview.powerDeliveredKw,
           costTotalCop: validatedReview.costTotalCop,
-          photoUrl: validatedReview.photoUrl,
+          photoUrl: validatedReview.photoUrl || body.photoUrl,
+        },
+        include: {
+          user: {
+            select: { id: true, name: true, image: true },
+          },
         },
       });
 
-      // Update station average rating
+      // Update station average rating and reviews count
       const reviews = await prisma.chargingReview.findMany({
         where: { stationId: validatedReview.stationId },
       });
@@ -93,14 +108,13 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        message: "¡Check-in y reseña guardada exitosamente!",
+        message: "¡Bitácora & reseña registrada con éxito en la comunidad!",
         data: newReview,
       });
     }
 
     // New station registration
     const validated = stationSubmissionSchema.parse(body);
-    const user = await prisma.user.findFirst();
 
     const newStation = await prisma.chargingStation.create({
       data: {
@@ -127,13 +141,50 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: "¡Electrolinera registrada y publicada en la base de datos nacional!",
+      message: "¡Electrolinera registrada y publicada exitosamente!",
       data: newStation,
     });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.errors || error.message || "Error en el registro" },
       { status: 400 }
+    );
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { id, address, city, department, priceInfo, amenities, connectors, name, operator } = body;
+
+    if (!id) {
+      return NextResponse.json({ success: false, error: "ID de estación requerido" }, { status: 400 });
+    }
+
+    const updateData: any = { updatedAt: new Date() };
+    if (address) updateData.address = address;
+    if (city) updateData.city = city;
+    if (department) updateData.department = department;
+    if (priceInfo) updateData.priceInfo = priceInfo;
+    if (amenities) updateData.amenities = amenities;
+    if (connectors) updateData.connectors = connectors;
+    if (name) updateData.name = name;
+    if (operator) updateData.operator = operator;
+
+    const updated = await prisma.chargingStation.update({
+      where: { id },
+      data: updateData,
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "Información de la estación actualizada correctamente",
+      data: updated,
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error.message || "Error al actualizar estación" },
+      { status: 500 }
     );
   }
 }
