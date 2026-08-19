@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { routeSubmissionSchema, routeCommentSchema } from "@/lib/validations";
+import { getAuthenticatedUser } from "@/lib/auth-helper";
 
 export async function GET() {
   try {
@@ -8,7 +9,7 @@ export async function GET() {
       where: { moderation: "APPROVED" },
       include: {
         createdBy: {
-          select: { name: true, image: true },
+          select: { id: true, name: true, image: true },
         },
         vehicleUsed: {
           select: {
@@ -41,17 +42,24 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "Debes iniciar sesión para publicar o comentar una ruta" },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
 
     // Route comment
     if (body.routeId && body.content) {
       const validatedComment = routeCommentSchema.parse(body);
-      const user = await prisma.user.findFirst();
 
       const newComment = await prisma.routeComment.create({
         data: {
           routeId: validatedComment.routeId,
-          userId: user?.id || "user-anon",
+          userId: user.id,
           content: validatedComment.content,
           rating: validatedComment.rating,
           actualKwhUsed: validatedComment.actualKwhUsed,
@@ -68,7 +76,6 @@ export async function POST(req: NextRequest) {
 
     // New route creation with real telemetry
     const validated = routeSubmissionSchema.parse(body);
-    const user = await prisma.user.findFirst();
 
     const newRoute = await prisma.route.create({
       data: {
@@ -101,12 +108,12 @@ export async function POST(req: NextRequest) {
         chargingStops: validated.chargingStops,
         photos: validated.photos.length > 0 ? validated.photos : ["https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80"],
         moderation: "APPROVED",
-        createdById: user?.id || "user-default",
+        createdById: user.id,
       },
       include: {
         vehicleUsed: true,
         createdBy: {
-          select: { name: true, image: true },
+          select: { id: true, name: true, image: true },
         },
       },
     });

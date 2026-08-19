@@ -1,46 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { getAuthenticatedUser } from "@/lib/auth-helper";
 
 export async function GET(req: NextRequest) {
   try {
-    const sessionCookie = req.cookies.get("ve_session")?.value;
-
-    let user = null;
-
-    if (sessionCookie) {
-      user = await prisma.user.findUnique({
-        where: { id: sessionCookie },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          phone: true,
-          image: true,
-          role: true,
-          vehicles: {
-            include: { vehicle: true },
-          },
-        },
-      });
-    }
-
-    // If no specific cookie yet, return the default admin or primary user as active session
-    if (!user) {
-      user = await prisma.user.findFirst({
-        orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          phone: true,
-          image: true,
-          role: true,
-          vehicles: {
-            include: { vehicle: true },
-          },
-        },
-      });
-    }
+    const user = await getAuthenticatedUser(req);
 
     if (!user) {
       return NextResponse.json({
@@ -53,7 +16,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       authenticated: true,
-      user,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        image: user.image,
+        role: user.role,
+        vehicles: user.vehicles || [],
+      },
     });
   } catch (error: any) {
     return NextResponse.json(

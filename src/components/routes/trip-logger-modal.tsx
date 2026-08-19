@@ -23,8 +23,11 @@ import {
   ArrowRight,
   PlusCircle,
   Trash2,
+  LogIn,
+  Plus,
 } from "lucide-react";
 import { VehicleItem, ChargingTelemetryStop, UserVehicleItem } from "@/types";
+import { useAuth } from "@/context/auth-context";
 import { toast } from "sonner";
 
 interface TripLoggerModalProps {
@@ -33,7 +36,6 @@ interface TripLoggerModalProps {
   onTripLogged?: () => void;
 }
 
-// Coordenadas conocidas de ciudades colombianas para geocodificación rápida
 const COLOMBIA_CITY_COORDS: Record<string, { lat: number; lng: number; altM: number }> = {
   "Bogotá": { lat: 4.6097, lng: -74.0817, altM: 2640 },
   "Bogotá, D.C.": { lat: 4.6097, lng: -74.0817, altM: 2640 },
@@ -60,6 +62,7 @@ export function TripLoggerModal({
   onOpenChange,
   onTripLogged,
 }: TripLoggerModalProps) {
+  const { user, openLoginModal } = useAuth();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [calculating, setCalculating] = useState(false);
@@ -70,6 +73,8 @@ export function TripLoggerModal({
   const [selectedUserVehicleId, setSelectedUserVehicleId] = useState<string>("");
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>("");
   const [useCatalogFallback, setUseCatalogFallback] = useState(false);
+  const [saveToGarage, setSaveToGarage] = useState(true);
+  const [newVehiclePlate, setNewVehiclePlate] = useState("");
 
   // Step 1: Drive Settings
   const [drivingMode, setDrivingMode] = useState<"ECO" | "NORMAL" | "SPORT">("NORMAL");
@@ -108,56 +113,54 @@ export function TripLoggerModal({
   const [routePolyline, setRoutePolyline] = useState<any>(null);
   const [elevationProfile, setElevationProfile] = useState<any[]>([]);
 
-  // Fetch User Garage & Dynamic Catalog when opening modal
+  // Fetch catalog & user's actual profile vehicles
   useEffect(() => {
-    async function loadUserDataAndVehicles() {
+    async function loadData() {
       try {
-        const [profileRes, catalogRes] = await Promise.all([
-          fetch("/api/user/profile"),
-          fetch("/api/vehicles"),
-        ]);
-
-        const profileData = await profileRes.json();
+        const catalogRes = await fetch("/api/vehicles");
         const catalogData = await catalogRes.json();
-
         if (catalogData.success && catalogData.data) {
           setCatalogVehicles(catalogData.data);
-        }
-
-        if (profileData.success && profileData.data?.vehicles?.length > 0) {
-          const garage: UserVehicleItem[] = profileData.data.vehicles;
-          setUserGarage(garage);
-
-          // Find primary vehicle or first vehicle in garage
-          const primary = garage.find((v) => v.isPrimary) || garage[0];
-          setSelectedUserVehicleId(primary.id);
-          setSelectedVehicleId(primary.vehicle?.id || primary.vehicleId || "");
-          setUseCatalogFallback(false);
-        } else {
-          // No garage yet, fallback to catalog
-          setUseCatalogFallback(true);
-          if (catalogData.success && catalogData.data?.length > 0) {
+          if (catalogData.data.length > 0 && !selectedVehicleId) {
             setSelectedVehicleId(catalogData.data[0].id);
           }
         }
+
+        if (user) {
+          const profileRes = await fetch("/api/user/profile");
+          const profileData = await profileRes.json();
+
+          if (profileData.success && profileData.data?.vehicles?.length > 0) {
+            const garage: UserVehicleItem[] = profileData.data.vehicles;
+            setUserGarage(garage);
+            const primary = garage.find((v) => v.isPrimary) || garage[0];
+            setSelectedUserVehicleId(primary.id);
+            setSelectedVehicleId(primary.vehicle?.id || primary.vehicleId || "");
+            setUseCatalogFallback(false);
+          } else {
+            setUserGarage([]);
+            setUseCatalogFallback(true);
+          }
+        } else {
+          setUserGarage([]);
+          setUseCatalogFallback(true);
+        }
       } catch (err) {
-        console.error("Error loading user garage and vehicles", err);
+        console.error("Error loading vehicles", err);
       }
     }
 
     if (open) {
-      loadUserDataAndVehicles();
+      loadData();
     }
-  }, [open]);
+  }, [open, user]);
 
-  // Determine current active vehicle specs
   const selectedGarageEntry = userGarage.find((v) => v.id === selectedUserVehicleId);
   const selectedCar =
     (!useCatalogFallback && selectedGarageEntry?.vehicle)
       ? selectedGarageEntry.vehicle
       : catalogVehicles.find((v) => v.id === selectedVehicleId) || catalogVehicles[0];
 
-  // Add a charging stop
   const handleAddStop = () => {
     const stop: ChargingTelemetryStop = {
       stationName: newStopStation,
@@ -177,7 +180,6 @@ export function TripLoggerModal({
     setChargingStops(chargingStops.filter((_, i) => i !== idx));
   };
 
-  // Run calculation via OpenRoute API
   const handleCalculateTelemetry = async () => {
     setCalculating(true);
     try {
@@ -226,17 +228,42 @@ export function TripLoggerModal({
     }
   };
 
-  // Submit Community Trip Log to Database
   const handleSubmitTrip = async () => {
+    if (!user) {
+      toast.error("Debes iniciar sesión para publicar tu viaje");
+      openLoginModal();
+      return;
+    }
+
     setLoading(true);
     try {
+      // Auto-save vehicle to user's garage if requested and not present
+      if (useCatalogFallback && saveToGarage && selectedCar) {
+        try {
+          await fetch("/api/user/profile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              vehicleId: selectedCar.id,
+              modelYear: selectedCar.year || 2024,
+              nickname: `${selectedCar.brand} ${selectedCar.model}`,
+              licensePlate: newVehiclePlate.trim() || undefined,
+              batteryHealth: 99.0,
+              isPrimary: userGarage.length === 0,
+            }),
+          });
+        } catch (e) {
+          console.error("Could not auto-add to garage", e);
+        }
+      }
+
       const orig = COLOMBIA_CITY_COORDS[originCity] || { lat: 4.6097, lng: -74.0817 };
       const dest = COLOMBIA_CITY_COORDS[destinationCity] || { lat: 5.5353, lng: -73.3678 };
 
       const title = `${originCity} a ${destinationCity} en ${selectedCar?.brand} ${selectedCar?.model}`;
       const payload = {
         title,
-        description: roadNotes || `Viaje real registrado con ${startSoc}% de salida y ${endSoc}% de llegada.`,
+        description: roadNotes || `Viaje real registrado por ${user.name || "propietario"} con ${startSoc}% de salida y ${endSoc}% de llegada.`,
         originCity,
         destinationCity,
         originAddress,
@@ -307,7 +334,7 @@ export function TripLoggerModal({
         </div>
 
         {/* Step Indicator */}
-        <div className="flex items-center justify-between pt-4 px-2">
+        <div className="flex items-center justify-between pt-3 px-1">
           {[
             { num: 1, label: "Vehículo & Garaje" },
             { num: 2, label: "Salida" },
@@ -335,27 +362,27 @@ export function TripLoggerModal({
         </div>
       </DialogHeader>
 
-      <div className="space-y-4 py-2 max-h-[65vh] overflow-y-auto pr-1">
+      <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto pr-1">
         {/* STEP 1: USER GARAGE VEHICLE & DRIVE SETTINGS */}
         {step === 1 && (
           <div className="space-y-4">
-            {/* User Garage Card if available */}
-            {userGarage.length > 0 && !useCatalogFallback ? (
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-900 border-2 border-emerald-500/50 space-y-3 shadow-lg shadow-emerald-500/10">
+            {/* If user is logged in and has vehicles in their garage */}
+            {user && userGarage.length > 0 && !useCatalogFallback ? (
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-900 border border-emerald-500/40 space-y-3 shadow-lg shadow-emerald-500/10">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs font-heading">
                     <Car className="w-4 h-4" />
-                    <span>Vehículo Registrado en tu Garaje</span>
+                    <span>Vehículo Registrado en tu Garaje ({user.name})</span>
                   </div>
                   <Badge variant="default" className="text-[10px] bg-emerald-500 text-slate-950 font-bold">
-                    Cargado Automáticamente
+                    Tu Vehículo
                   </Badge>
                 </div>
 
                 {userGarage.length > 1 && (
                   <div className="space-y-1">
                     <label className="text-[11px] text-muted-foreground block">
-                      Selecciona cuál de tus carros usaste en este viaje:
+                      Selecciona cuál de tus carros usaste:
                     </label>
                     <Select
                       value={selectedUserVehicleId}
@@ -418,9 +445,9 @@ export function TripLoggerModal({
               <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block font-heading">
-                    1. Selecciona el Vehículo del Catálogo
+                    {user ? "Selecciona el Vehículo del Catálogo" : "Selecciona tu Vehículo Eléctrico"}
                   </label>
-                  {userGarage.length > 0 && (
+                  {user && userGarage.length > 0 && (
                     <button
                       type="button"
                       onClick={() => setUseCatalogFallback(false)}
@@ -430,6 +457,21 @@ export function TripLoggerModal({
                     </button>
                   )}
                 </div>
+
+                {!user && (
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between text-xs">
+                    <span className="text-amber-400">¿Tienes cuenta? Inicia sesión para usar tu garaje</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={openLoginModal}
+                      className="h-7 text-xs font-bold gap-1 bg-amber-500/20 border-amber-500/30 text-amber-300 hover:bg-amber-500/30"
+                    >
+                      <LogIn className="w-3 h-3" />
+                      Ingresar
+                    </Button>
+                  </div>
+                )}
 
                 <Select
                   value={selectedVehicleId}
@@ -441,6 +483,28 @@ export function TripLoggerModal({
                     </option>
                   ))}
                 </Select>
+
+                {user && userGarage.length === 0 && (
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={saveToGarage}
+                        onChange={(e) => setSaveToGarage(e.target.checked)}
+                        className="rounded accent-emerald-500 w-4 h-4"
+                      />
+                      <span>Guardar este vehículo automáticamente en mi garaje</span>
+                    </label>
+                    {saveToGarage && (
+                      <Input
+                        placeholder="Placa de tu vehículo (ej. EVK-412)"
+                        value={newVehiclePlate}
+                        onChange={(e) => setNewVehiclePlate(e.target.value.toUpperCase())}
+                        className="text-xs h-8 bg-slate-900 border-slate-700 font-mono-spec"
+                      />
+                    )}
+                  </div>
+                )}
 
                 {selectedCar && (
                   <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-slate-950 border border-slate-800 text-center text-xs font-mono-spec">
@@ -542,7 +606,7 @@ export function TripLoggerModal({
                     placeholder="Ej. Calle 100 con 15 / Portal Norte"
                     value={originAddress}
                     onChange={(e) => setOriginAddress(e.target.value)}
-                    className="mt-1"
+                    className="mt-1 text-xs"
                   />
                 </div>
               </div>
@@ -624,7 +688,7 @@ export function TripLoggerModal({
                       placeholder="Ej. Terpel Voltex Briceño"
                       value={newStopStation}
                       onChange={(e) => setNewStopStation(e.target.value)}
-                      className="mt-1"
+                      className="mt-1 text-xs"
                     />
                   </div>
 
@@ -700,7 +764,6 @@ export function TripLoggerModal({
                   Agregar Esta Parada a la Bitácora
                 </Button>
 
-                {/* List of stops */}
                 {chargingStops.length > 0 && (
                   <div className="space-y-2 pt-2 border-t border-slate-800">
                     {chargingStops.map((stop, idx) => (
@@ -760,7 +823,7 @@ export function TripLoggerModal({
                     placeholder="Ej. Plaza de Bolívar / Centro"
                     value={destinationAddress}
                     onChange={(e) => setDestinationAddress(e.target.value)}
-                    className="mt-1"
+                    className="mt-1 text-xs"
                   />
                 </div>
               </div>
@@ -791,7 +854,7 @@ export function TripLoggerModal({
                   type="number"
                   value={avgSpeedKmh}
                   onChange={(e) => setAvgSpeedKmh(Number(e.target.value))}
-                  className="mt-1"
+                  className="mt-1 text-xs"
                 />
               </div>
 

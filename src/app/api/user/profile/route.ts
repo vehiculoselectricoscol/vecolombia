@@ -1,28 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { userProfileSchema, userVehicleSchema } from "@/lib/validations";
+import { getAuthenticatedUser } from "@/lib/auth-helper";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    // Busca el usuario principal o el primer admin/usuario disponible
-    const user = await prisma.user.findFirst({
-      include: {
-        vehicles: {
-          include: {
-            vehicle: true,
-          },
-        },
-        routes: true,
-        marketplaceListings: true,
-      },
-      orderBy: { createdAt: "asc" },
-    });
+    const user = await getAuthenticatedUser(req);
 
     if (!user) {
-      return NextResponse.json({ success: false, error: "Usuario no encontrado" }, { status: 404 });
+      return NextResponse.json(
+        { success: false, authenticated: false, error: "Debes iniciar sesión para ver tu perfil y garaje" },
+        { status: 401 }
+      );
     }
 
-    return NextResponse.json({ success: true, data: user });
+    return NextResponse.json({
+      success: true,
+      authenticated: true,
+      data: user,
+    });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message || "Error al obtener perfil" },
@@ -33,13 +29,13 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   try {
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
+      return NextResponse.json({ success: false, error: "No autorizado" }, { status: 401 });
+    }
+
     const body = await req.json();
     const validated = userProfileSchema.parse(body);
-
-    const user = await prisma.user.findFirst();
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Usuario no encontrado" }, { status: 404 });
-    }
 
     const updated = await prisma.user.update({
       where: { id: user.id },
@@ -65,12 +61,20 @@ export async function PUT(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
+      return NextResponse.json({ success: false, error: "Debes iniciar sesión para agregar un vehículo a tu garaje" }, { status: 401 });
+    }
+
     const body = await req.json();
     const validated = userVehicleSchema.parse(body);
 
-    const user = await prisma.user.findFirst();
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Usuario no encontrado" }, { status: 404 });
+    // If this is set as primary, unmark other vehicles of this user as primary
+    if (validated.isPrimary) {
+      await prisma.userVehicle.updateMany({
+        where: { userId: user.id },
+        data: { isPrimary: false },
+      });
     }
 
     const newVehicle = await prisma.userVehicle.create({
@@ -90,7 +94,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: "Vehículo agregado a tu garaje",
+      message: "Vehículo agregado exitosamente a tu garaje",
       data: newVehicle,
     });
   } catch (error: any) {
@@ -103,6 +107,11 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
+      return NextResponse.json({ success: false, error: "No autorizado" }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const userVehicleId = searchParams.get("userVehicleId");
 
@@ -110,11 +119,15 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: "ID requerido" }, { status: 400 });
     }
 
-    await prisma.userVehicle.delete({
-      where: { id: userVehicleId },
+    // Ensure the vehicle actually belongs to this user
+    await prisma.userVehicle.deleteMany({
+      where: {
+        id: userVehicleId,
+        userId: user.id,
+      },
     });
 
-    return NextResponse.json({ success: true, message: "Vehículo eliminado del garaje" });
+    return NextResponse.json({ success: true, message: "Vehículo eliminado de tu garaje" });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message || "Error eliminando vehículo" },
